@@ -70,7 +70,8 @@ public:
     static bool IsInitialized();
 
 private:
-    static bool s_initialized;  /**< Initialization flag */
+    /** @brief Plugin initialization flag */
+    static bool s_initialized;
 };
 
 #endif // __TDX_PLUGIN_MAIN_H__ 

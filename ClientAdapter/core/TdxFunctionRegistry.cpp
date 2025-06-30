@@ -1,7 +1,7 @@
 #include "TdxFunctionRegistry.h"
+#include "../utils/log.h"
 #include <algorithm>
 #include <sstream>
-#include <iostream>
 
 /**
  * @brief Private constructor for singleton pattern
@@ -40,7 +40,7 @@ bool TdxFunctionRegistry::RegisterFunction(TdxFunctionPtr function)
     // Check if function mark already exists
     if (m_functions.find(functionMark) != m_functions.end())
     {
-        std::cerr << "Function mark " << functionMark << " already registered" << std::endl;
+        log_error("Function mark %d already registered", functionMark);
         return false;
     }
 
@@ -50,8 +50,7 @@ bool TdxFunctionRegistry::RegisterFunction(TdxFunctionPtr function)
     // Rebuild C function array
     RebuildCFunctionArray();
     
-    std::cout << "Registered function: " << function->GetFunctionName() 
-              << " (mark: " << functionMark << ")" << std::endl;
+    log_info("Registered function: %s (mark: %d)", function->GetFunctionName().c_str(), functionMark);
     
     return true;
 }
@@ -77,8 +76,7 @@ bool TdxFunctionRegistry::UnregisterFunction(unsigned short functionMark)
     // Rebuild C function array
     RebuildCFunctionArray();
     
-    std::cout << "Unregistered function: " << functionName 
-              << " (mark: " << functionMark << ")" << std::endl;
+    log_info("Unregistered function: %s (mark: %d)", functionName.c_str(), functionMark);
     
     return true;
 }
@@ -174,7 +172,7 @@ void TdxFunctionRegistry::InitializeDefaultFunctions()
     
     m_isInitialized = true;
     
-    std::cout << "TDX Function Registry initialized" << std::endl;
+    log_info("TDX Function Registry initialized");
 }
 
 /**
@@ -189,7 +187,7 @@ void TdxFunctionRegistry::Clear()
     m_cFunctionInfos.clear();
     m_isInitialized = false;
     
-    std::cout << "Cleared " << count << " functions from registry" << std::endl;
+    log_info("Cleared %zu functions from registry", count);
 }
 
 /**
@@ -262,25 +260,25 @@ bool TdxFunctionRegistry::ValidateFunction(TdxFunctionPtr function) const
 {
     if (!function)
     {
-        std::cerr << "Cannot register null function" << std::endl;
+        log_error("Cannot register null function");
         return false;
     }
     
     if (function->GetFunctionMark() == 0)
     {
-        std::cerr << "Function mark cannot be 0 (reserved for null terminator)" << std::endl;
+        log_error("Function mark cannot be 0 (reserved for null terminator)");
         return false;
     }
     
     if (function->GetFunctionName().empty())
     {
-        std::cerr << "Function name cannot be empty" << std::endl;
+        log_error("Function name cannot be empty");
         return false;
     }
     
     if (function->GetCFunctionPointer() == nullptr)
     {
-        std::cerr << "Function must provide valid C function pointer" << std::endl;
+        log_error("Function must provide valid C function pointer");
         return false;
     }
     

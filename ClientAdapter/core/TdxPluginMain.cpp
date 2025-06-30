@@ -1,5 +1,5 @@
 #include "TdxPluginMain.h"
-#include "TdxExampleFunctions.h"
+#include "../test/TdxExampleFunctions.h"
 #include "../utils/log.h"
 #include <iostream>
 #include <sstream>
