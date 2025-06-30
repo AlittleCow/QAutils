@@ -23,6 +23,7 @@ private:
     std::vector<PluginTCalcFuncInfo> m_cFunctionInfos;     /**< C-style function info array for TDX */
     mutable std::mutex m_mutex;                            /**< Thread safety mutex */
     bool m_isInitialized;                                  /**< Initialization flag */
+    bool m_arrayProvided;                                  /**< Flag to prevent array rebuilding after TDX access */
 
     // Private constructor for singleton
     TdxFunctionRegistry();
@@ -106,6 +107,12 @@ public:
      * @return String containing registry information
      */
     std::string GetRegistryInfo() const;
+
+    /**
+     * @brief Validate memory layout compatibility with TDX
+     * @return true if memory layout is compatible
+     */
+    bool ValidateMemoryLayout() const;
 
 private:
     /**

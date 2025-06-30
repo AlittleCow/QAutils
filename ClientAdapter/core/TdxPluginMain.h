@@ -13,6 +13,8 @@ extern "C"
  * 
  * This is the entry point that TDX calls to get the list of available functions.
  * It follows the standard TDX plugin interface specification.
+ * Uses the dynamic function registry to build the function table at runtime.
+ * This allows for flexible function registration and management.
  * 
  * @param pInfo Pointer to function info array pointer
  * @return TRUE if registration succeeded, FALSE otherwise

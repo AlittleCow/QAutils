@@ -33,8 +33,8 @@ set(HEADERS
     core/ITdxFunction.h
     core/TdxFunctionBase.h
     core/TdxFunctionRegistry.h
-    test/TdxExampleFunctions.h
     core/TdxPluginMain.h
+    module/TdxCommonFunc.h
     utils/TdxUtilities.h
     utils/log.h
 )
@@ -42,8 +42,8 @@ set(HEADERS
 set(SOURCES
     core/TdxFunctionBase.cpp
     core/TdxFunctionRegistry.cpp
-    test/TdxExampleFunctions.cpp
     core/TdxPluginMain.cpp
+    module/TdxCommonFunc.cpp
     utils/TdxUtilities.cpp
     utils/log.cpp
 )
@@ -70,8 +70,8 @@ endif()
 target_include_directories(QAUtilsTdxPlugin PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/core
+    ${CMAKE_CURRENT_SOURCE_DIR}/module
     ${CMAKE_CURRENT_SOURCE_DIR}/utils
-    ${CMAKE_CURRENT_SOURCE_DIR}/test
 )
 
 # Preprocessor definitions
@@ -91,30 +91,12 @@ install(FILES ${HEADERS}
     DESTINATION include/QAUtilsTdxPlugin
 )
 
-# Create a test executable (optional)
-option(BUILD_TESTS "Build test programs" OFF)
-
-if(BUILD_TESTS)
-    add_executable(TdxPluginTest
-        test/TdxPluginTest.cpp
-    )
-    
-    target_link_libraries(TdxPluginTest QAUtilsTdxPlugin)
-    target_include_directories(TdxPluginTest PRIVATE 
-        ${CMAKE_CURRENT_SOURCE_DIR}
-        ${CMAKE_CURRENT_SOURCE_DIR}/core
-        ${CMAKE_CURRENT_SOURCE_DIR}/utils
-        ${CMAKE_CURRENT_SOURCE_DIR}/test
-    )
-endif()
-
 # Print configuration information
 message(STATUS "=== QAUtils TDX Plugin Configuration ===")
 message(STATUS "Version: ${PROJECT_VERSION}")
 message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
 message(STATUS "C++ standard: ${CMAKE_CXX_STANDARD}")
 message(STATUS "Compiler: ${CMAKE_CXX_COMPILER_ID}")
-message(STATUS "Build tests: ${BUILD_TESTS}")
 message(STATUS "Install prefix: ${CMAKE_INSTALL_PREFIX}")
 message(STATUS "=====================================")
 
@@ -131,4 +113,10 @@ else()
     set(CPACK_GENERATOR "TGZ")
 endif()
 
-include(CPack) 
+include(CPack)
+
+# Add post-build step to copy DLL to TDX directory
+add_custom_command(TARGET QAUtilsTdxPlugin POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:QAUtilsTdxPlugin> "C:/new_tdx/T0002/dlls/"
+    COMMENT "Copying QAUtilsTdxPlugin.dll to TDX plugin directory"
+) 

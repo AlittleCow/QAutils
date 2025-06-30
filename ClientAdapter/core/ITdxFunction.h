@@ -30,11 +30,11 @@ typedef struct tagPluginTCalcFuncInfo
 #pragma pack(pop)
 
 /**
- * @brief Abstract base interface for all TDX functions
+ * @brief Interface for TDX functions
  * 
- * This interface defines the contract that all TDX functions must implement.
- * It provides a clean OOP abstraction while maintaining compatibility with
- * the C-style TDX plugin interface.
+ * This interface provides metadata and registration support for TDX functions.
+ * The actual calculation is performed by the C-style function pointer that
+ * TDX calls directly. This design aligns with how TDX actually works.
  */
 class ITdxFunction
 {
@@ -60,39 +60,57 @@ public:
     virtual std::string GetDescription() const = 0;
 
     /**
-     * @brief Execute the function calculation
-     * @param nCount Number of data points
-     * @param pOut Output array (must be pre-allocated)
-     * @param pInA Input array A (can be nullptr if not used)
-     * @param pInB Input array B (can be nullptr if not used)
-     * @param pInC Input array C (can be nullptr if not used)
-     * @return true if calculation succeeded, false otherwise
+     * @brief Get function parameter information
+     * @return Description of function parameters and usage
      */
-    virtual bool Execute(int nCount, float* pOut, const float* pInA, 
-                        const float* pInB, const float* pInC) = 0;
+    virtual std::string GetParameterInfo() const = 0;
 
     /**
-     * @brief Validate input parameters before execution
-     * @param nCount Number of data points
-     * @param pOut Output array
-     * @param pInA Input array A
-     * @param pInB Input array B
-     * @param pInC Input array C
-     * @return true if parameters are valid, false otherwise
-     */
-    virtual bool ValidateInputs(int nCount, const float* pOut, const float* pInA,
-                               const float* pInB, const float* pInC) const = 0;
-
-    /**
-     * @brief Get the C-style function pointer for TDX compatibility
-     * @return Function pointer that can be registered with TDX
+     * @brief Get the C-style function pointer for TDX registration
+     * 
+     * This is the actual function that TDX will call directly.
+     * It should contain all the calculation logic and error handling.
+     * 
+     * @return Function pointer that TDX will call
      */
     virtual pPluginFUNC GetCFunctionPointer() = 0;
+
+    /**
+     * @brief Validate if the function is properly configured
+     * @return true if function is ready for registration
+     */
+    virtual bool IsValid() const = 0;
+
+    /**
+     * @brief Get function category for organization
+     * @return Category string (e.g., "Technical", "Statistical", "Custom")
+     */
+    virtual std::string GetCategory() const = 0;
+
+    /**
+     * @brief Get minimum required input count
+     * @return Minimum number of data points needed
+     */
+    virtual int GetMinInputCount() const = 0;
+
+    /**
+     * @brief Check if function supports variable input arrays
+     * @return true if function can handle nullptr input arrays
+     */
+    virtual bool SupportsVariableInputs() const = 0;
 };
 
 /**
  * @brief Smart pointer type for TDX functions
  */
 using TdxFunctionPtr = std::shared_ptr<ITdxFunction>;
+
+/**
+ * @brief Forward declaration of TdxFunctionRegistry
+ * 
+ * The complete TdxFunctionRegistry class is defined in TdxFunctionRegistry.h
+ * Include that header when you need to use the registry.
+ */
+class TdxFunctionRegistry;
 
 #endif // __ITDX_FUNCTION_H__ 

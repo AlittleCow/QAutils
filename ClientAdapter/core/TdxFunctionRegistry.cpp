@@ -7,7 +7,7 @@
  * @brief Private constructor for singleton pattern
  */
 TdxFunctionRegistry::TdxFunctionRegistry()
-    : m_isInitialized(false)
+    : m_isInitialized(false), m_arrayProvided(false)
 {
 }
 
@@ -35,6 +35,13 @@ bool TdxFunctionRegistry::RegisterFunction(TdxFunctionPtr function)
 
     std::lock_guard<std::mutex> lock(m_mutex);
     
+    // Prevent registration after array has been provided to TDX
+    if (m_arrayProvided)
+    {
+        log_error("Cannot register functions after array has been provided to TDX");
+        return false;
+    }
+    
     unsigned short functionMark = function->GetFunctionMark();
     
     // Check if function mark already exists
@@ -47,8 +54,11 @@ bool TdxFunctionRegistry::RegisterFunction(TdxFunctionPtr function)
     // Register the function
     m_functions[functionMark] = function;
     
-    // Rebuild C function array
-    RebuildCFunctionArray();
+    // Rebuild C function array only if not yet provided to TDX
+    if (!m_arrayProvided)
+    {
+        RebuildCFunctionArray();
+    }
     
     log_info("Registered function: %s (mark: %d)", function->GetFunctionName().c_str(), functionMark);
     
@@ -64,6 +74,13 @@ bool TdxFunctionRegistry::UnregisterFunction(unsigned short functionMark)
 {
     std::lock_guard<std::mutex> lock(m_mutex);
     
+    // Prevent unregistration after array has been provided to TDX
+    if (m_arrayProvided)
+    {
+        log_error("Cannot unregister functions after array has been provided to TDX");
+        return false;
+    }
+    
     auto it = m_functions.find(functionMark);
     if (it == m_functions.end())
     {
@@ -73,8 +90,11 @@ bool TdxFunctionRegistry::UnregisterFunction(unsigned short functionMark)
     std::string functionName = it->second->GetFunctionName();
     m_functions.erase(it);
     
-    // Rebuild C function array
-    RebuildCFunctionArray();
+    // Rebuild C function array only if not yet provided to TDX
+    if (!m_arrayProvided)
+    {
+        RebuildCFunctionArray();
+    }
     
     log_info("Unregistered function: %s (mark: %d)", functionName.c_str(), functionMark);
     
@@ -151,6 +171,14 @@ PluginTCalcFuncInfo* TdxFunctionRegistry::GetCFunctionInfoArray()
         RebuildCFunctionArray();
     }
     
+    // Mark array as provided to TDX - prevents future modifications
+    // This ensures memory stability for TDX which may hold onto this pointer
+    if (!m_arrayProvided)
+    {
+        m_arrayProvided = true;
+        log_debug("Function array provided to TDX - registry is now locked for modifications");
+    }
+    
     return m_cFunctionInfos.data();
 }
 
@@ -186,6 +214,7 @@ void TdxFunctionRegistry::Clear()
     m_functions.clear();
     m_cFunctionInfos.clear();
     m_isInitialized = false;
+    m_arrayProvided = false;  // Reset the flag to allow new registrations
     
     log_info("Cleared %zu functions from registry", count);
 }
@@ -231,24 +260,46 @@ void TdxFunctionRegistry::RebuildCFunctionArray()
     {
         auto function = pair.second;
         
-        // Set current instance for C wrapper
-        if (auto baseFunction = std::dynamic_pointer_cast<TdxFunctionBase>(function))
-        {
-            baseFunction->SetCurrentInstance();
-        }
-        
         PluginTCalcFuncInfo info;
         info.nFuncMark = function->GetFunctionMark();
         info.pCallFunc = function->GetCFunctionPointer();
         
+        // Validate the function pointer is not null
+        if (info.pCallFunc == nullptr)
+        {
+            log_error("Function %s (mark %d) returned null function pointer", 
+                     function->GetFunctionName().c_str(), info.nFuncMark);
+            continue;
+        }
+        
+        // Log detailed registration info
+        log_debug("Registering function: Mark=%d, Name='%s', FuncPtr=%p", 
+                 info.nFuncMark, function->GetFunctionName().c_str(), info.pCallFunc);
+        
         m_cFunctionInfos.push_back(info);
     }
     
-    // Add null terminator
+    // Add null terminator - CRITICAL for TDX compatibility
     PluginTCalcFuncInfo nullInfo;
     nullInfo.nFuncMark = 0;
     nullInfo.pCallFunc = nullptr;
     m_cFunctionInfos.push_back(nullInfo);
+    
+    // Validate memory layout matches expectations
+    if (!m_cFunctionInfos.empty())
+    {
+        // Ensure the array is contiguous in memory
+        size_t expectedSize = m_cFunctionInfos.size() * sizeof(PluginTCalcFuncInfo);
+        log_debug("Built function array: %zu functions + 1 terminator, %zu bytes total", 
+                 m_cFunctionInfos.size() - 1, expectedSize);
+        
+        // Verify the last entry is the null terminator
+        const auto& lastEntry = m_cFunctionInfos.back();
+        if (lastEntry.nFuncMark != 0 || lastEntry.pCallFunc != nullptr)
+        {
+            log_error("Function array null terminator is invalid!");
+        }
+    }
 }
 
 /**
@@ -282,5 +333,67 @@ bool TdxFunctionRegistry::ValidateFunction(TdxFunctionPtr function) const
         return false;
     }
     
+    return true;
+}
+
+/**
+ * @brief Validate memory layout compatibility with TDX
+ * @return true if memory layout is compatible
+ */
+bool TdxFunctionRegistry::ValidateMemoryLayout() const
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    
+    if (m_cFunctionInfos.empty())
+    {
+        log_debug("Function array is empty - nothing to validate");
+        return true;
+    }
+    
+    // Check structure size and alignment
+    size_t expectedStructSize = sizeof(PluginTCalcFuncInfo);
+    log_debug("PluginTCalcFuncInfo size: %zu bytes", expectedStructSize);
+    
+    // Verify the array is properly null-terminated
+    const auto& lastEntry = m_cFunctionInfos.back();
+    if (lastEntry.nFuncMark != 0 || lastEntry.pCallFunc != nullptr)
+    {
+        log_error("Function array is not properly null-terminated");
+        return false;
+    }
+    
+    // Check that all function pointers are valid
+    for (size_t i = 0; i < m_cFunctionInfos.size() - 1; ++i) // Skip null terminator
+    {
+        const auto& info = m_cFunctionInfos[i];
+        if (info.nFuncMark == 0)
+        {
+            log_error("Function at index %zu has invalid mark 0", i);
+            return false;
+        }
+        if (info.pCallFunc == nullptr)
+        {
+            log_error("Function at index %zu has null function pointer", i);
+            return false;
+        }
+    }
+    
+    // Verify memory is contiguous (vector guarantees this, but let's be explicit)
+    if (m_cFunctionInfos.size() > 1)
+    {
+        const void* firstPtr = &m_cFunctionInfos[0];
+        const void* secondPtr = &m_cFunctionInfos[1];
+        ptrdiff_t actualDistance = static_cast<const char*>(secondPtr) - static_cast<const char*>(firstPtr);
+        
+        if (actualDistance != static_cast<ptrdiff_t>(sizeof(PluginTCalcFuncInfo)))
+        {
+            log_error("Function array elements are not contiguous: expected %zu bytes, got %td bytes",
+                     sizeof(PluginTCalcFuncInfo), actualDistance);
+            return false;
+        }
+    }
+    
+    log_debug("Memory layout validation passed: %zu functions + 1 terminator", 
+             m_cFunctionInfos.size() - 1);
     return true;
 } 

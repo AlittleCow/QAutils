@@ -1,67 +1,148 @@
 #include "TdxPluginMain.h"
-#include "../test/TdxExampleFunctions.h"
 #include "../utils/log.h"
+#include "../module/TdxCommonFunc.h"
 #include <iostream>
 #include <sstream>
+
+// Static assertions to ensure memory layout compatibility
+static_assert(sizeof(PluginTCalcFuncInfo) == sizeof(unsigned short) + sizeof(pPluginFUNC), 
+              "PluginTCalcFuncInfo structure size mismatch");
+static_assert(alignof(PluginTCalcFuncInfo) <= 8, 
+              "PluginTCalcFuncInfo alignment too large");
 
 // Static member initialization
 bool TdxPluginManager::s_initialized = false;
 
 /**
- * @brief Main TDX plugin registration function (C interface)
+ * @brief Example TDX function implementation
+ * 
+ * This demonstrates the proper way to implement a TDX function with the new design.
+ * The C-style function contains all the calculation logic and is called directly by TDX.
+ */
+class TdxStubFunction : public TdxFunctionBase
+{
+public:
+    /**
+     * @brief Constructor - defines function metadata
+     */
+    TdxStubFunction()
+        : TdxFunctionBase(999, "TdxStub", "Simple stub function for testing - copies input A to output",
+                         "Example", 1, false)
+    {
+    }
+
+    /**
+     * @brief Get the C-style function pointer that TDX will call directly
+     * @return Function pointer to our static wrapper function
+     */
+    pPluginFUNC GetCFunctionPointer() override
+    {
+        return &TdxStubWrapper;
+    }
+
+    /**
+     * @brief Provide detailed parameter information
+     * @return Parameter usage description
+     */
+    std::string GetParameterInfo() const override
+    {
+        return "Parameters: pInA=source data, pOut=destination, pInB/pInC=unused";
+    }
+
+private:
+    /**
+     * @brief Static C-style wrapper function - this is what TDX calls directly
+     * 
+     * This function contains all the actual calculation logic and uses the
+     * utility macros for error handling and logging.
+     * 
+     * @param nCount Number of data points
+     * @param pOut Output array
+     * @param pInA Input array A
+     * @param pInB Input array B (unused)
+     * @param pInC Input array C (unused)
+     */
+    static void TdxStubWrapper(int nCount, float* pOut, float* pInA, float* pInB, float* pInC)
+    {
+        TDX_FUNCTION_WRAPPER_BEGIN("TdxStub", 999)
+        
+        // Initialize output array
+        InitializeOutput(pOut, nCount, 0.0f);
+        
+        // Perform the calculation - simple copy from input A to output
+        if (pInA && pOut)
+        {
+            if (SafeArrayCopy(pOut, pInA, nCount))
+            {
+                LogDebug("TdxStub", "Successfully copied " + std::to_string(nCount) + " values");
+            }
+            else
+            {
+                LogError("TdxStub", "Failed to copy array data");
+            }
+        }
+        else
+        {
+            LogError("TdxStub", "Invalid input parameters - pInA or pOut is null");
+        }
+        
+        TDX_FUNCTION_WRAPPER_END()
+    }
+};
+
+/**
+ * @brief Main TDX plugin registration function (C interface) - Dynamic Registry
  * 
  * This is the entry point called by TDX to register plugin functions.
- * It initializes the plugin if needed and returns the function array.
+ * Uses the dynamic function registry to build the function table at runtime.
+ * This allows for flexible function registration and management.
  * 
  * @param pInfo Pointer to function info array pointer
  * @return TRUE if registration succeeded
  */
 BOOL RegisterTdxFunc(PluginTCalcFuncInfo** pInfo)
 {
-    try
+    if (pInfo == NULL)
     {
-        // Initialize plugin if not already done
+        return FALSE;
+    }
+
+    if (*pInfo == NULL)
+    {
+        // Initialize the plugin system if not already done
         if (!TdxPluginManager::IsInitialized())
         {
             if (!TdxPluginManager::Initialize())
             {
-                log_debug("Failed to initialize TDX plugin");
+                log_error("Failed to initialize TDX plugin system");
                 return FALSE;
             }
         }
-
-        // Get registry instance
-        auto& registry = TdxFunctionRegistry::GetInstance();
         
-        // Check if we have any functions registered
-        if (registry.GetFunctionCount() == 0)
+        // Get the dynamic function array from the registry
+        auto& registry = TdxFunctionRegistry::GetInstance();
+        *pInfo = registry.GetCFunctionInfoArray();
+        
+        if (*pInfo == NULL)
         {
-            log_debug("No functions registered in TDX plugin");
+            log_error("Failed to get function array from registry");
             return FALSE;
         }
-
-        // Return the function array
-        if (pInfo != nullptr)
+        
+        // Validate memory layout compatibility with TDX expectations
+        if (!registry.ValidateMemoryLayout())
         {
-            *pInfo = registry.GetCFunctionInfoArray();
-            
-            log_debug("TDX Plugin registered %d functions successfully", registry.GetFunctionCount());
-            
-            return TRUE;
+            log_error("Function array memory layout validation failed");
+            return FALSE;
         }
         
-        return FALSE;
+        size_t functionCount = registry.GetFunctionCount();
+        log_debug("TDX Plugin registered %zu functions successfully (dynamic registry)", functionCount);
+        log_debug("Memory layout validation passed - array is TDX-compatible");
+        return TRUE;
     }
-    catch (const std::exception& e)
-    {
-        log_debug("Exception in RegisterTdxFunc: %s", e.what());
-        return FALSE;
-    }
-    catch (...)
-    {
-        log_debug("Unknown exception in RegisterTdxFunc");
-        return FALSE;
-    }
+
+    return FALSE;
 }
 
 // ============================================================================
@@ -178,12 +259,10 @@ void TdxPluginManager::RegisterBuiltInFunctions()
         
         // Register example functions
         bool success = true;
-        
-        success &= registry.RegisterFunction(std::make_shared<SequenceFunction>());
-        success &= registry.RegisterFunction(std::make_shared<AverageFunction>());
-        success &= registry.RegisterFunction(std::make_shared<SimpleMovingAverageFunction>());
-        success &= registry.RegisterFunction(std::make_shared<ExponentialMovingAverageFunction>());
-        success &= registry.RegisterFunction(std::make_shared<DebugControlFunction>());
+
+        success &= registry.RegisterFunction(std::make_shared<TdxStubFunction>());
+        // Register common functions (Kbar API functions)
+        success &= RegisterTdxCommonFunctions();
         
         if (success)
         {
