@@ -273,8 +273,8 @@ void TdxFunctionRegistry::RebuildCFunctionArray()
         }
         
         // Log detailed registration info
-        log_debug("Registering function: Mark=%d, Name='%s', FuncPtr=%p", 
-                 info.nFuncMark, function->GetFunctionName().c_str(), info.pCallFunc);
+        // log_debug("Registering function: Mark=%d, Name='%s', FuncPtr=%p", 
+        //          info.nFuncMark, function->GetFunctionName().c_str(), info.pCallFunc);
         
         m_cFunctionInfos.push_back(info);
     }

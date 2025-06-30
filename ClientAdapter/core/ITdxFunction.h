@@ -113,4 +113,4 @@ using TdxFunctionPtr = std::shared_ptr<ITdxFunction>;
  */
 class TdxFunctionRegistry;
 
-#endif // __ITDX_FUNCTION_H__ 
+#endif // __ITDX_FUNCTION_H__

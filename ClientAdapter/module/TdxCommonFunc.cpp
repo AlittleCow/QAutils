@@ -241,12 +241,12 @@ float EncodeSymbolPeriod(const std::string& symbol, const std::string& period)
  */
 void DecodeSymbolPeriod(float encoded, std::string& symbol, std::string& period)
 {
-    // The encoded value format is: Symbol*100 + Period
+    // The encoded value format is: Symbol + Period*1000000
     // TDX Period function results from 0 to 13, representing 1/5/15/30/60 minutes, daily/weekly/monthly, multi-minute, multi-day/quarterly/yearly, 5-second/multi-second lines, 13+ for custom periods
-    // Example: 600001.SH 1min -> 600001*100 + 1 = 600001001
+    // Example: 600001.SH 1min -> 600001 + 1*1000000 = 1600001
     int encodedInt = static_cast<int>(encoded);
-    symbol = std::to_string(encodedInt / 100);
-    period = std::to_string(encodedInt % 100);
+    period = std::to_string(encodedInt / 1000000);
+    symbol = std::to_string(encodedInt % 1000000);
 
     log_debug("Decoded symbol: %s, period: %s", symbol.c_str(), period.c_str());
 }
@@ -275,6 +275,8 @@ TDX_EXPORT(TdxKbar_SetOHLC)
         temp_high.push_back(pfINb[i]);
         temp_low.push_back(pfINc[i]);
     }
+    log_debug("TdxKbar_SetOHLC: DataLen=%d, Open=%f, High=%f, Low=%f", 
+             DataLen, pfINa[0], pfINb[0], pfINc[0]);
 }
 
 /**
@@ -298,6 +300,8 @@ TDX_EXPORT(TdxKbar_SetCloseVolume)
         temp_close.push_back(pfINa[i]);
         temp_volume.push_back(static_cast<long>(pfINb[i]));
     }
+    log_debug("TdxKbar_SetCloseVolume: DataLen=%d, Close=%f, Volume=%ld", 
+             DataLen, pfINa[0], pfINb[0]);
 }
 
 /**
@@ -324,6 +328,8 @@ TDX_EXPORT(TdxKbar_SetDate)
         temp_month.push_back(static_cast<char>(pfINb[i]));
         temp_day.push_back(static_cast<char>(pfINc[i]));
     }
+    log_debug("TdxKbar_SetDate: DataLen=%d, Year=%d, Month=%d, Day=%d", 
+             DataLen, temp_year[0], temp_month[0], temp_day[0]);
 }
 
 /**
@@ -377,6 +383,9 @@ TDX_EXPORT(TdxKbar_SetTimeAndFinalize)
         manager.AddKbar(current_symbol, current_period, kbar);
     }
     
+    log_debug("TdxKbar_SetTimeAndFinalize: DataLen=%d, Symbol=%s, Period=%s", 
+             DataLen, current_symbol.c_str(), current_period.c_str());
+
     // Clear temporary storage
     temp_open.clear();
     temp_high.clear();

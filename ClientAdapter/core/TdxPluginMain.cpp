@@ -63,9 +63,7 @@ private:
      * @param pInC Input array C (unused)
      */
     static void TdxStubWrapper(int nCount, float* pOut, float* pInA, float* pInB, float* pInC)
-    {
-        TDX_FUNCTION_WRAPPER_BEGIN("TdxStub", 999)
-        
+    {  
         // Initialize output array
         InitializeOutput(pOut, nCount, 0.0f);
         
@@ -85,8 +83,6 @@ private:
         {
             LogError("TdxStub", "Invalid input parameters - pInA or pOut is null");
         }
-        
-        TDX_FUNCTION_WRAPPER_END()
     }
 };
 

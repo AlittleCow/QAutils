@@ -176,36 +176,4 @@ public:
     static bool IsDebugMode();
 };
 
-/**
- * @brief Macro to help create C-style wrapper functions with error handling
- * 
- * Usage in derived class:
- * static void MyFunctionWrapper(int nCount, float* pOut, float* pInA, float* pInB, float* pInC)
- * {
- *     TDX_FUNCTION_WRAPPER_BEGIN("MyFunction", 123)
- *     
- *     // Your calculation logic here
- *     for (int i = 0; i < nCount; i++) {
- *         pOut[i] = pInA[i] * 2.0f;
- *     }
- *     
- *     TDX_FUNCTION_WRAPPER_END()
- * }
- */
-#define TDX_FUNCTION_WRAPPER_BEGIN(func_name, func_mark) \
-    try { \
-        if (TdxFunctionBase::IsDebugMode()) { \
-            TdxFunctionBase::LogFunctionCall(func_name, nCount, pInA != nullptr, pInB != nullptr, pInC != nullptr); \
-        } \
-        if (!TdxFunctionBase::ValidateBasicInputsStatic(nCount, pOut, func_name)) { \
-            return; \
-        }
-
-#define TDX_FUNCTION_WRAPPER_END() \
-    } catch (const std::exception& e) { \
-        TdxFunctionBase::LogError("TDX_WRAPPER", std::string("Exception: ") + e.what()); \
-    } catch (...) { \
-        TdxFunctionBase::LogError("TDX_WRAPPER", "Unknown exception"); \
-    }
-
 #endif // __TDX_FUNCTION_BASE_H__ 
