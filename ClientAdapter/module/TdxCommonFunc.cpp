@@ -132,7 +132,18 @@ const std::vector<KbarData>& KbarManager::GetKbarData(const std::string& symbol,
     auto it = m_kbarData.find(key);
     if (it != m_kbarData.end())
     {
+        log_debug("KbarManager::GetKbarData: Found data for symbol=%s, period=%s, count=%d", 
+                 symbol.c_str(), period.c_str(), static_cast<int>(it->second.size()));
         return it->second;
+    }
+    
+    // Log all available data for debugging
+    log_debug("KbarManager::GetKbarData: No data found for symbol=%s, period=%s", symbol.c_str(), period.c_str());
+    log_debug("KbarManager::GetKbarData: Available data keys:");
+    for (const auto& pair : m_kbarData) {
+        log_debug("  - symbol=%s, period=%s, count=%d", 
+                 pair.first.symbol.c_str(), pair.first.period.c_str(), 
+                 static_cast<int>(pair.second.size()));
     }
     
     static std::vector<KbarData> empty_vector;
@@ -150,7 +161,15 @@ void KbarManager::ClearKbarData(const std::string& symbol, const std::string& pe
     auto it = m_kbarData.find(key);
     if (it != m_kbarData.end())
     {
+        int oldSize = static_cast<int>(it->second.size());
         it->second.clear();
+        log_debug("KbarManager::ClearKbarData: Cleared %d items for symbol=%s, period=%s", 
+                 oldSize, symbol.c_str(), period.c_str());
+    }
+    else
+    {
+        log_debug("KbarManager::ClearKbarData: No data to clear for symbol=%s, period=%s", 
+                 symbol.c_str(), period.c_str());
     }
 }
 
@@ -177,6 +196,37 @@ int KbarManager::GetKbarCount(const std::string& symbol, const std::string& peri
         return static_cast<int>(it->second.size());
     }
     return 0;
+}
+
+/**
+ * @brief Debug function to log all available data in KbarManager
+ */
+void KbarManager::DebugLogAllData() const
+{
+    log_debug("KbarManager::DebugLogAllData: Total unique symbol/period combinations: %d", static_cast<int>(m_kbarData.size()));
+    if (m_kbarData.empty()) {
+        log_debug("KbarManager::DebugLogAllData: No data stored in KbarManager");
+        return;
+    }
+    
+    for (const auto& pair : m_kbarData) {
+        const KbarKey& key = pair.first;
+        const std::vector<KbarData>& data = pair.second;
+        log_debug("KbarManager::DebugLogAllData: symbol='%s', period='%s', count=%d", 
+                 key.symbol.c_str(), key.period.c_str(), static_cast<int>(data.size()));
+        
+        // Show first few records for debugging
+        int showCount = std::min(3, static_cast<int>(data.size()));
+        for (int i = 0; i < showCount; i++) {
+            const KbarData& kbar = data[i];
+            log_debug("  [%d]: OHLCV(%.2f,%.2f,%.2f,%.2f,%ld) Date(%d-%02d-%02d %02d:%02d)", 
+                     i, kbar.open, kbar.high, kbar.low, kbar.close, kbar.volume,
+                     kbar.year, kbar.month, kbar.day, kbar.hour, kbar.minute);
+        }
+        if (data.size() > static_cast<size_t>(showCount)) {
+            log_debug("  ... and %d more records", static_cast<int>(data.size()) - showCount);
+        }
+    }
 }
 
 /**
@@ -234,8 +284,8 @@ float EncodeSymbolPeriod(const std::string& symbol, const std::string& period)
 }
 
 /**
- * @brief Helper function to decode symbol and period from float
- * @param encoded Encoded float value
+ * @brief Decode symbol and period from encoded float value
+ * @param encoded Encoded float value containing symbol and period information
  * @param symbol Output symbol string
  * @param period Output period string
  */
@@ -245,10 +295,14 @@ void DecodeSymbolPeriod(float encoded, std::string& symbol, std::string& period)
     // TDX Period function results from 0 to 13, representing 1/5/15/30/60 minutes, daily/weekly/monthly, multi-minute, multi-day/quarterly/yearly, 5-second/multi-second lines, 13+ for custom periods
     // Example: 600001.SH 1min -> 600001 + 1*1000000 = 1600001
     int encodedInt = static_cast<int>(encoded);
-    period = std::to_string(encodedInt / 1000000);
-    symbol = std::to_string(encodedInt % 1000000);
+    int periodCode = encodedInt / 1000000;
+    int symbolCode = encodedInt % 1000000;
+    
+    period = std::to_string(periodCode);
+    symbol = std::to_string(symbolCode);
 
-    log_debug("Decoded symbol: %s, period: %s", symbol.c_str(), period.c_str());
+    log_debug("DecodeSymbolPeriod: encoded=%f, encodedInt=%d, periodCode=%d, symbolCode=%d -> symbol='%s', period='%s'", 
+             encoded, encodedInt, periodCode, symbolCode, symbol.c_str(), period.c_str());
 }
 
 /**
@@ -321,8 +375,8 @@ TDX_EXPORT(TdxKbar_SetOHLC)
         temp_high.push_back(pfINb[i]);
         temp_low.push_back(pfINc[i]);
     }
-    log_debug("TdxKbar_SetOHLC: DataLen=%d, Open=%f, High=%f, Low=%f", 
-             DataLen, pfINa[0], pfINb[0], pfINc[0]);
+    log_debug("TdxKbar_SetOHLC: DataLen=%d, sample OHLC[0]=(%.2f,%.2f,%.2f)", 
+             DataLen, DataLen > 0 ? pfINa[0] : 0.0f, DataLen > 0 ? pfINb[0] : 0.0f, DataLen > 0 ? pfINc[0] : 0.0f);
 }
 
 /**
@@ -346,8 +400,8 @@ TDX_EXPORT(TdxKbar_SetCloseVolume)
         temp_close.push_back(pfINa[i]);
         temp_volume.push_back(static_cast<long>(pfINb[i]));
     }
-    log_debug("TdxKbar_SetCloseVolume: DataLen=%d, Close=%f, Volume=%ld", 
-             DataLen, pfINa[0], pfINb[0]);
+    log_debug("TdxKbar_SetCloseVolume: DataLen=%d, sample CV[0]=(%.2f,%ld)", 
+             DataLen, DataLen > 0 ? pfINa[0] : 0.0f, DataLen > 0 ? static_cast<long>(pfINb[0]) : 0L);
 }
 
 /**
@@ -374,8 +428,11 @@ TDX_EXPORT(TdxKbar_SetDate)
         temp_month.push_back(static_cast<char>(pfINb[i]));
         temp_day.push_back(static_cast<char>(pfINc[i]));
     }
-    log_debug("TdxKbar_SetDate: DataLen=%d, Year=%d, Month=%d, Day=%d", 
-             DataLen, temp_year[0], temp_month[0], temp_day[0]);
+    log_debug("TdxKbar_SetDate: DataLen=%d, latest date[%d]=(%d-%02d-%02d)", 
+             DataLen, DataLen > 0 ? DataLen - 1 : 0,
+             DataLen > 0 ? static_cast<short>(pfINa[DataLen - 1]) : 0, 
+             DataLen > 0 ? static_cast<char>(pfINb[DataLen - 1]) : 0, 
+             DataLen > 0 ? static_cast<char>(pfINc[DataLen - 1]) : 0);
 }
 
 /**
@@ -404,6 +461,8 @@ TDX_EXPORT(TdxKbar_SetTimeAndFinalize)
     if (DataLen > 0)
     {
         DecodeSymbolPeriod(pfINc[0], current_symbol, current_period);
+        log_debug("TdxKbar_SetTimeAndFinalize: Decoded symbol=%s, period=%s from encoded value=%f", 
+                 current_symbol.c_str(), current_period.c_str(), pfINc[0]);
     }
     
     // Now finalize and store all the Kbar data
@@ -421,6 +480,17 @@ TDX_EXPORT(TdxKbar_SetTimeAndFinalize)
                            static_cast<int>(temp_hour.size()),
                            static_cast<int>(temp_minute.size())});
     
+    log_debug("TdxKbar_SetTimeAndFinalize: Array sizes - open:%d, high:%d, low:%d, close:%d, volume:%d, year:%d, month:%d, day:%d, hour:%d, minute:%d, minSize:%d", 
+             static_cast<int>(temp_open.size()), static_cast<int>(temp_high.size()), static_cast<int>(temp_low.size()),
+             static_cast<int>(temp_close.size()), static_cast<int>(temp_volume.size()), static_cast<int>(temp_year.size()),
+             static_cast<int>(temp_month.size()), static_cast<int>(temp_day.size()), static_cast<int>(temp_hour.size()),
+             static_cast<int>(temp_minute.size()), minSize);
+    
+    if (minSize == 0) {
+        log_error("TdxKbar_SetTimeAndFinalize: No valid data to store, all arrays are empty");
+        return;
+    }
+    
     for (int i = 0; i < minSize; i++)
     {
         KbarData kbar(temp_open[i], temp_high[i], temp_low[i], temp_close[i], temp_volume[i]);
@@ -429,8 +499,17 @@ TDX_EXPORT(TdxKbar_SetTimeAndFinalize)
         manager.AddKbar(current_symbol, current_period, kbar);
     }
     
-    log_debug("TdxKbar_SetTimeAndFinalize: DataLen=%d, Symbol=%s, Period=%s", 
-             DataLen, current_symbol.c_str(), current_period.c_str());
+    log_debug("TdxKbar_SetTimeAndFinalize: Successfully stored %d K-bar records for symbol=%s, period=%s", 
+             minSize, current_symbol.c_str(), current_period.c_str());
+    
+    // Log latest K-bar record for debugging
+    if (minSize > 0) {
+        // Last record (latest)
+        int lastIndex = minSize - 1;
+        log_debug("TdxKbar_SetTimeAndFinalize: Latest K-bar[%d] - OHLCV(%.2f,%.2f,%.2f,%.2f,%ld) Date(%d-%02d-%02d %02d:%02d)", 
+                 lastIndex, temp_open[lastIndex], temp_high[lastIndex], temp_low[lastIndex], temp_close[lastIndex], temp_volume[lastIndex],
+                 temp_year[lastIndex], temp_month[lastIndex], temp_day[lastIndex], temp_hour[lastIndex], temp_minute[lastIndex]);
+    }
 
     // Clear temporary storage
     temp_open.clear();

@@ -116,7 +116,7 @@ void log_set_quiet(int enable) {
 }
 
 /** @brief Global log level variable */
-int log_level = LOG_LEVEL::LOG_FATAL;
+int log_level = LOG_LEVEL::LOG_DEBUG;
 
 /**
  * @brief Extract the last two directory levels from a file path
@@ -173,10 +173,10 @@ void log_log(int level, const char* file, int line, const char* fmt, ...) {
     lock();
 
     /* Get current time */
-    struct tm lt;   //tm结构指针
-    time_t now;  //声明time_t类型变量
-    time(&now);      //获取系统日期和时间
-    localtime_s(&lt, &now);   //获取当地日期和时间
+    struct tm lt;   //tm锟结构指锟斤拷
+    time_t now;  //锟斤拷锟斤拷time_t锟斤拷锟酵憋拷锟斤拷
+    time(&now);      //锟斤拷取系统锟斤拷锟节猴拷时锟斤拷
+    localtime_s(&lt, &now);   //锟斤拷取锟斤拷锟斤拷锟斤拷锟节猴拷时锟斤拷
 
     // Extract short file path for cleaner output
     const char* short_file = extract_last_two_levels(file);
@@ -190,9 +190,9 @@ void log_log(int level, const char* file, int line, const char* fmt, ...) {
 #ifdef LOG_USE_COLOR
         fprintf(
             stderr, "%s %s%-5s\x1b[0m \x1b[90m%s:%d:\x1b[0m ",
-            buf, level_colors[level], level_names[level], short_file, line);
+            buf, level_colors[level-1], level_names[level-1], short_file, line);
 #else
-        fprintf(stderr, "%s %-5s %s:%d: ", buf, level_names[level], short_file, line);
+        fprintf(stderr, "%s %-5s %s:%d: ", buf, level_names[level-1], short_file, line);
 #endif
         va_start(args, fmt);
         vfprintf(stderr, fmt, args);
@@ -207,7 +207,7 @@ void log_log(int level, const char* file, int line, const char* fmt, ...) {
         va_list args;
         char buf[32];
         buf[strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &lt)] = '\0';
-        fprintf(L.fp, "%s %-5s %s:%d: ", buf, level_names[level], short_file, line);
+        fprintf(L.fp, "%s %-5s %s:%d: ", buf, level_names[level-1], short_file, line);
         va_start(args, fmt);
         vfprintf(L.fp, fmt, args);
         va_end(args);
@@ -250,6 +250,7 @@ void log_init()
             return;
 
         log_set_fp(Logfp);
+        log_set_level(LOG_DEBUG); // Set level to DEBUG to see debug messages
 
         log_info("Hi,log inited! @ %s",fullPath);
 

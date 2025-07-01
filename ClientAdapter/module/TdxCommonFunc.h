@@ -136,6 +136,11 @@ public:
     int GetKbarCount(const std::string& symbol, const std::string& period) const;
     
     /**
+     * @brief Debug function to log all available data in KbarManager
+     */
+    void DebugLogAllData() const;
+    
+    /**
      * @brief Set complete Kbar data arrays for a symbol and period
      * @param symbol Symbol name
      * @param period Period string

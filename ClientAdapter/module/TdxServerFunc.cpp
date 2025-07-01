@@ -452,11 +452,24 @@ TDX_EXPORT(TdxServer_SendKBar)
             std::string symbol, period;
             int requestedIndex = 0;
             
+            log_debug("TdxServer_SendKBar: Input parameters - DataLen=%d, pfINa[0]=%f, pfINb[0]=%f", 
+                     DataLen, DataLen > 0 ? pfINa[0] : 0.0f, DataLen > 0 ? pfINb[0] : 0.0f);
+            
             if (DataLen > 0 && pfINa && pfINb) {
                 // Try to decode symbol and period from combined encoding in pfINa
                 DecodeSymbolPeriod(pfINa[0], symbol, period);
-                // convert period to period string
-                period = ConvertPeriodToStr(period);
+                log_debug("TdxServer_SendKBar: After DecodeSymbolPeriod - symbol=%s, period=%s", symbol.c_str(), period.c_str());
+                
+                // Store original numeric period for data lookup
+                std::string originalPeriod = period;
+                
+                // convert period to period string for display/logging purposes only
+                std::string periodString = ConvertPeriodToStr(period);
+                log_debug("TdxServer_SendKBar: After ConvertPeriodToStr - original period=%s, converted period=%s", 
+                         originalPeriod.c_str(), periodString.c_str());
+
+                // Use original numeric period for data lookup to match storage format
+                period = originalPeriod;
 
                 // Get requested index from pfINb
                 requestedIndex = static_cast<int>(pfINb[0]);
@@ -465,16 +478,31 @@ TDX_EXPORT(TdxServer_SendKBar)
             }
             
             // Use default values if decoding failed
-            if (symbol.empty()) symbol = "999999";
-            if (period.empty()) period = "daily";
-            if (requestedIndex < 0) requestedIndex = 0;
+            if (symbol.empty()) {
+                log_debug("TdxServer_SendKBar: Symbol is empty, using default '999999'");
+                symbol = "999999";
+            }
+            if (period.empty()) {
+                log_debug("TdxServer_SendKBar: Period is empty, using default 'daily'");
+                period = "daily";
+            }
+            if (requestedIndex < 0) {
+                log_debug("TdxServer_SendKBar: RequestedIndex is negative (%d), using default 0", requestedIndex);
+                requestedIndex = 0;
+            }
+            
+            log_debug("TdxServer_SendKBar: Final parameters - symbol=%s, period=%s, requestedIndex=%d", 
+                     symbol.c_str(), period.c_str(), requestedIndex);
             
             // Get K-bar data from KbarManager
             KbarManager& kbarManager = KbarManager::GetInstance();
             const std::vector<KbarData>& kbarData = kbarManager.GetKbarData(symbol, period);
             
             if (kbarData.empty()) {
-                log_error("No K-bar data available for symbol=%s, period=%s", symbol.c_str(), period.c_str());
+                log_error("TdxServer_SendKBar: No K-bar data available for symbol=%s, period=%s. Check if data was loaded via TdxKbar_SetTimeAndFinalize sequence.", symbol.c_str(), period.c_str());
+                
+                // Debug: Show all available data
+                kbarManager.DebugLogAllData();
                 return;
             }
             
@@ -486,6 +514,10 @@ TDX_EXPORT(TdxServer_SendKBar)
             
             // Get the requested K-bar data
             const KbarData& kbar = kbarData[requestedIndex];
+            
+            log_debug("TdxServer_SendKBar: Retrieved K-bar data - open=%f, high=%f, low=%f, close=%f, volume=%ld, date=%d-%d-%d %d:%d", 
+                     kbar.open, kbar.high, kbar.low, kbar.close, kbar.volume,
+                     kbar.year, kbar.month, kbar.day, kbar.hour, kbar.minute);
             
             // Convert to QAUtils::KBarData format
             QAUtils::KBarData qaKbar;
