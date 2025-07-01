@@ -175,6 +175,9 @@ class QuantServer:
             close_price = kbar_data.get('close', 0)
             volume = kbar_data.get('volume', 0)
             
+            # debug print
+            print(f"Received kbar data: symbol={symbol}, timestamp={timestamp}, open={open_price}, high={high_price}, low={low_price}, close={close_price}, volume={volume}")
+
             # Process the kbar data (add your processing logic here)
             processed_data = {
                 'symbol': symbol,

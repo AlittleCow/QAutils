@@ -472,7 +472,7 @@ TDX_EXPORT(TdxServer_SendKBar)
                 period = originalPeriod;
 
                 // Get requested index from pfINb
-                requestedIndex = static_cast<int>(pfINb[0]);
+                requestedIndex = static_cast<int>(pfINb[DataLen - 1]);
                 
                 // pfINc is reserved for future use
             }
