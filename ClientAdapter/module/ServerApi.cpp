@@ -42,6 +42,11 @@ ZmqClient::~ZmqClient() {
  */
 bool ZmqClient::connect() {
     try {
+        // Set socket options for better timeout handling
+        socket_->set(zmq::sockopt::linger, 0); // Don't linger on close
+        socket_->set(zmq::sockopt::rcvtimeo, 10000); // 10 second receive timeout
+        socket_->set(zmq::sockopt::sndtimeo, 5000);  // 5 second send timeout
+        
         std::string endpoint = "tcp://" + server_host_ + ":" + std::to_string(server_port_);
         socket_->connect(endpoint);
         connected_ = true;
@@ -84,6 +89,73 @@ bool ZmqClient::isConnected() const {
 }
 
 /**
+ * @brief Test if server is available and responding
+ * 
+ * @return true if server is reachable and responding, false otherwise
+ */
+bool ZmqClient::testServerAvailability() {
+    if (!connected_) {
+        return false;
+    }
+    
+    try {
+        // Send a simple heartbeat with shorter timeout to test availability
+        json test_message = {
+            {"type", "heartbeat"},
+            {"client_time", getCurrentTimestamp()}
+        };
+        
+        std::string json_str = test_message.dump();
+        zmq::message_t request(json_str.size());
+        memcpy(request.data(), json_str.c_str(), json_str.size());
+        
+        // Use shorter timeout for availability test
+        zmq::pollitem_t poll_items[] = { { *socket_, 0, ZMQ_POLLOUT, 0 } };
+        int poll_result = zmq::poll(poll_items, 1, std::chrono::milliseconds(2000)); // 2 second timeout
+        
+        if (poll_result <= 0) {
+            return false;
+        }
+        
+        if (!socket_->send(request, zmq::send_flags::dontwait)) {
+            return false;
+        }
+        
+        // Check for response
+        zmq::pollitem_t recv_poll_items[] = { { *socket_, 0, ZMQ_POLLIN, 0 } };
+        poll_result = zmq::poll(recv_poll_items, 1, std::chrono::milliseconds(3000)); // 3 second timeout
+        
+        if (poll_result <= 0) {
+            // Reset socket state after failed test
+            socket_->close();
+            socket_ = std::make_unique<zmq::socket_t>(*context_, zmq::socket_type::req);
+            socket_->set(zmq::sockopt::linger, 0);
+            socket_->set(zmq::sockopt::rcvtimeo, 10000);
+            socket_->set(zmq::sockopt::sndtimeo, 5000);
+            std::string endpoint = "tcp://" + server_host_ + ":" + std::to_string(server_port_);
+            socket_->connect(endpoint);
+            return false;
+        }
+        
+        zmq::message_t reply;
+        if (!socket_->recv(reply, zmq::recv_flags::dontwait)) {
+            return false;
+        }
+        
+        // Parse response to check if it's valid
+        std::string reply_str(static_cast<char*>(reply.data()), reply.size());
+        json response = json::parse(reply_str);
+        
+        // Check if response indicates success or at least valid communication
+        return response.contains("status") || response.contains("type") || !response.empty();
+        
+    } catch (const std::exception& e) {
+        log_error("Server availability test failed: %s", e.what());
+        return false;
+    }
+}
+
+/**
  * @brief Send a JSON request and receive response
  * 
  * @param message The JSON message to send
@@ -92,7 +164,7 @@ bool ZmqClient::isConnected() const {
 json ZmqClient::sendRequest(const json& message) {
     if (!connected_) {
         log_error("Client not connected to server");
-        return json{};
+        return json{{"status", "error"}, {"message", "client not connected"}};
     }
 
     try {
@@ -123,16 +195,23 @@ json ZmqClient::sendRequest(const json& message) {
 
         // Receive response with timeout using polling
         zmq::pollitem_t recv_poll_items[] = { { *socket_, 0, ZMQ_POLLIN, 0 } };
-        poll_result = zmq::poll(recv_poll_items, 1, std::chrono::milliseconds(5000)); // 5 second timeout
+        poll_result = zmq::poll(recv_poll_items, 1, std::chrono::milliseconds(10000)); // 10 second timeout for response
         
         if (poll_result == 0) {
-            log_error("Receive timeout: server not responding");
-            connected_ = false; // Mark as disconnected
-            // Reset socket to clean state
-            socket_->close();
-            socket_ = std::make_unique<zmq::socket_t>(*context_, zmq::socket_type::req);
-            std::string endpoint = "tcp://" + server_host_ + ":" + std::to_string(server_port_);
-            socket_->connect(endpoint);
+            log_error("Receive timeout: server not responding to request");
+            // Don't immediately disconnect, but try to recover the socket state
+            // Reset socket to clean state for REQ-REP pattern
+            try {
+                socket_->close();
+                socket_ = std::make_unique<zmq::socket_t>(*context_, zmq::socket_type::req);
+                std::string endpoint = "tcp://" + server_host_ + ":" + std::to_string(server_port_);
+                socket_->connect(endpoint);
+                // Keep connected_ as true since we've reconnected the socket
+                log_info("Socket reset due to receive timeout, attempting to maintain connection");
+            } catch (const std::exception& e) {
+                log_error("Failed to reset socket after timeout: %s", e.what());
+                connected_ = false;
+            }
             return json{{"status", "error"}, {"message", "receive timeout"}};
         } else if (poll_result < 0) {
             log_error("Poll error during receive");

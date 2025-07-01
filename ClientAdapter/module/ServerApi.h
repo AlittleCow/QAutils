@@ -85,6 +85,13 @@ public:
     bool isConnected() const;
 
     /**
+     * @brief Test if server is available and responding
+     * 
+     * @return true if server is reachable and responding, false otherwise
+     */
+    bool testServerAvailability();
+
+    /**
      * @brief Send a JSON request and receive response
      * 
      * @param message The JSON message to send
