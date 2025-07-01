@@ -247,9 +247,9 @@ extern "C" {
      * @brief TDX API function to send K-bar series data to server
      * @param DataLen Number of data points
      * @param pfOUT Output array (server response)
-     * @param pfINa Input array A (price data - close prices)
-     * @param pfINb Input array B (volume data)
-     * @param pfINc Input array C (symbol encoding)
+     * @param pfINa Input array A (encoded symbol information)
+     * @param pfINb Input array B (requested K-bar starting index)
+     * @param pfINc Input array C (K-bar length/count to send)
      */
     void TdxServer_SendKBarSeries(int DataLen, float* pfOUT, float* pfINa, float* pfINb, float* pfINc);
 

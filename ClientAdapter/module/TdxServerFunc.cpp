@@ -650,9 +650,9 @@ TDX_EXPORT(TdxServer_CalculateBollinger)
  * @brief TDX API function to send K-bar series data to server
  * @param DataLen Number of data points
  * @param pfOUT Output array (server response)
- * @param pfINa Input array A (price data - close prices)
- * @param pfINb Input array B (volume data)
- * @param pfINc Input array C (symbol encoding)
+ * @param pfINa Input array A (encoded symbol information)
+ * @param pfINb Input array B (requested K-bar starting index)
+ * @param pfINc Input array C (K-bar length/count to send)
  */
 TDX_EXPORT(TdxServer_SendKBarSeries)
 {
@@ -661,23 +661,114 @@ TDX_EXPORT(TdxServer_SendKBarSeries)
     
     if (client && client->isConnected()) {
         try {
-            // Create simplified K-bar series
-            std::vector<QAUtils::KBarData> kbarSeries;
-            std::string symbol = "STOCK_TEST";
+            // Decode symbol and period from input parameters
+            std::string symbol, period;
+            int startIndex = 0;
+            int kbarLength = 0;
             
-            QAUtils::KBarData kbar;
-            kbar.symbol = symbol;
-            kbar.timestamp = "2024-01-01T10:00:00Z";
-            kbar.close = 100.0;
-            kbar.open = 99.0;
-            kbar.high = 102.0;
-            kbar.low = 98.0;
-            kbar.volume = 1000;
-            kbarSeries.push_back(kbar);
+            log_debug("TdxServer_SendKBarSeries: Input parameters - DataLen=%d, pfINa[0]=%f, pfINb[0]=%f, pfINc[0]=%f", 
+                     DataLen, DataLen > 0 ? pfINa[0] : 0.0f, DataLen > 0 ? pfINb[0] : 0.0f, DataLen > 0 ? pfINc[0] : 0.0f);
+            
+            if (DataLen > 0 && pfINa && pfINb && pfINc) {
+                // Try to decode symbol and period from combined encoding in pfINa
+                DecodeSymbolPeriod(pfINa[0], symbol, period);
+                log_debug("TdxServer_SendKBarSeries: After DecodeSymbolPeriod - symbol=%s, period=%s", symbol.c_str(), period.c_str());
+                
+                // Store original numeric period for data lookup
+                std::string originalPeriod = period;
+                
+                // convert period to period string for display/logging purposes only
+                std::string periodString = ConvertPeriodToStr(period);
+                log_debug("TdxServer_SendKBarSeries: After ConvertPeriodToStr - original period=%s, converted period=%s", 
+                         originalPeriod.c_str(), periodString.c_str());
+
+                // Use original numeric period for data lookup to match storage format
+                period = originalPeriod;
+
+                // Get starting index from pfINb
+                startIndex = static_cast<int>(pfINb[DataLen - 1]);
+                
+                // Get K-bar length from pfINc
+                kbarLength = static_cast<int>(pfINc[DataLen - 1]);
+            }
+            
+            // Use default values if decoding failed
+            if (symbol.empty()) {
+                log_debug("TdxServer_SendKBarSeries: Symbol is empty, using default '999999'");
+                symbol = "999999";
+            }
+            if (period.empty()) {
+                log_debug("TdxServer_SendKBarSeries: Period is empty, using default 'daily'");
+                period = "daily";
+            }
+            if (startIndex < 0) {
+                log_debug("TdxServer_SendKBarSeries: StartIndex is negative (%d), using default 0", startIndex);
+                startIndex = 0;
+            }
+            if (kbarLength <= 0) {
+                log_debug("TdxServer_SendKBarSeries: KbarLength is invalid (%d), using default 100", kbarLength);
+                kbarLength = 100; // Default length if not specified or invalid
+            }
+            
+            log_debug("TdxServer_SendKBarSeries: Final parameters - symbol=%s, period=%s, startIndex=%d, kbarLength=%d", 
+                     symbol.c_str(), period.c_str(), startIndex, kbarLength);
+            
+            // Get K-bar data from KbarManager
+            KbarManager& kbarManager = KbarManager::GetInstance();
+            const std::vector<KbarData>& kbarData = kbarManager.GetKbarData(symbol, period);
+            
+            if (kbarData.empty()) {
+                log_error("TdxServer_SendKBarSeries: No K-bar data available for symbol=%s, period=%s. Check if data was loaded via TdxKbar_SetTimeAndFinalize sequence.", symbol.c_str(), period.c_str());
+                
+                // Debug: Show all available data
+                kbarManager.DebugLogAllData();
+                return;
+            }
+            
+            if (startIndex >= static_cast<int>(kbarData.size())) {
+                log_error("Starting index %d out of range for symbol=%s, period=%s (available: %d)", 
+                         startIndex, symbol.c_str(), period.c_str(), static_cast<int>(kbarData.size()));
+                return;
+            }
+            
+            // Calculate the actual end index based on startIndex and kbarLength
+            int endIndex = std::min(startIndex + kbarLength, static_cast<int>(kbarData.size()));
+            int actualLength = endIndex - startIndex;
+            
+            log_debug("TdxServer_SendKBarSeries: Calculated range - startIndex=%d, endIndex=%d, actualLength=%d", 
+                     startIndex, endIndex, actualLength);
+            
+            // Convert K-bar data from startIndex to endIndex into QAUtils::KBarData format
+            std::vector<QAUtils::KBarData> kbarSeries;
+            kbarSeries.reserve(actualLength);
+            
+            for (int i = startIndex; i < endIndex; ++i) {
+                const KbarData& kbar = kbarData[i];
+                
+                QAUtils::KBarData qaKbar;
+                qaKbar.symbol = symbol;
+                qaKbar.open = kbar.open;
+                qaKbar.high = kbar.high;
+                qaKbar.low = kbar.low;
+                qaKbar.close = kbar.close;
+                qaKbar.volume = kbar.volume;
+                
+                // Format timestamp from date/time components
+                char timestamp[32];
+                snprintf(timestamp, sizeof(timestamp), "%04d-%02d-%02dT%02d:%02d:00Z", 
+                        kbar.year, kbar.month, kbar.day, kbar.hour, kbar.minute);
+                qaKbar.timestamp = timestamp;
+                
+                kbarSeries.push_back(qaKbar);
+            }
+            
+            log_debug("TdxServer_SendKBarSeries: Prepared %d K-bars (requested=%d) starting from index %d", 
+                     static_cast<int>(kbarSeries.size()), kbarLength, startIndex);
             
             json response = client->testKBarSeries(symbol, kbarSeries);
             if (response.contains("status") && response["status"] == "success") {
-                log_debug("K-bar series sent successfully, symbol=%s", symbol.c_str());
+                log_debug("K-bar series sent successfully: symbol=%s, period=%s, count=%d, startIndex=%d, requestedLength=%d", 
+                         symbol.c_str(), period.c_str(), static_cast<int>(kbarSeries.size()), startIndex, kbarLength);
             } else {
                 log_error("K-bar series send failed: %s", response.dump().c_str());
             }
@@ -1139,39 +1230,6 @@ public:
 };
 
 /**
- * @brief Wrapper class for TdxServer_SendKBarSeries function
- */
-class TdxServerSendKBarSeriesFunction : public TdxFunctionBase
-{
-public:
-    /**
-     * @brief Constructor
-     */
-    TdxServerSendKBarSeriesFunction()
-        : TdxFunctionBase(TDX_SERVER_FUNCTION_ID_OFFSET + 10, "TdxServer_SendKBarSeries", "Send K-bar series data to server", "Server", 1, false)
-    {
-    }
-
-    /**
-     * @brief Get unique C-style function pointer
-     * @return Function pointer for TdxServer_SendKBarSeries
-     */
-    pPluginFUNC GetCFunctionPointer() override
-    {
-        return &TdxServer_SendKBarSeries;
-    }
-
-    /**
-     * @brief Provide detailed parameter information
-     * @return Parameter usage description
-     */
-    std::string GetParameterInfo() const override
-    {
-        return "Parameters: pInA=Close prices, pInB=Volume data, pInC=Symbol encoding, pOut=Send result";
-    }
-};
-
-/**
  * @brief Wrapper class for TdxServer_CalculateEMA function
  */
 class TdxServerCalculateEMAFunction : public TdxFunctionBase
@@ -1181,7 +1239,7 @@ public:
      * @brief Constructor
      */
     TdxServerCalculateEMAFunction()
-        : TdxFunctionBase(TDX_SERVER_FUNCTION_ID_OFFSET + 11, "TdxServer_CalculateEMA", "Calculate Exponential Moving Average", "Server", 1, false)
+        : TdxFunctionBase(TDX_SERVER_FUNCTION_ID_OFFSET + 10, "TdxServer_CalculateEMA", "Calculate Exponential Moving Average", "Server", 1, false)
     {
     }
 
@@ -1214,7 +1272,7 @@ public:
      * @brief Constructor
      */
     TdxServerSetParameterFunction()
-        : TdxFunctionBase(TDX_SERVER_FUNCTION_ID_OFFSET + 12, "TdxServer_SetParameter", "Set server parameters", "Server", 1, false)
+        : TdxFunctionBase(TDX_SERVER_FUNCTION_ID_OFFSET + 11, "TdxServer_SetParameter", "Set server parameters", "Server", 1, false)
     {
     }
 
@@ -1247,7 +1305,7 @@ public:
      * @brief Constructor
      */
     TdxServerGetParameterFunction()
-        : TdxFunctionBase(TDX_SERVER_FUNCTION_ID_OFFSET + 13, "TdxServer_GetParameter", "Get server parameters", "Server", 1, false)
+        : TdxFunctionBase(TDX_SERVER_FUNCTION_ID_OFFSET + 12, "TdxServer_GetParameter", "Get server parameters", "Server", 1, false)
     {
     }
 
@@ -1280,7 +1338,7 @@ public:
      * @brief Constructor
      */
     TdxServerCleanupAndDisconnectFunction()
-        : TdxFunctionBase(TDX_SERVER_FUNCTION_ID_OFFSET + 14, "TdxServer_CleanupAndDisconnect", "Cleanup and disconnect after API completion", "Server", 1, false)
+        : TdxFunctionBase(TDX_SERVER_FUNCTION_ID_OFFSET + 13, "TdxServer_CleanupAndDisconnect", "Cleanup and disconnect after API completion", "Server", 1, false)
     {
     }
 
@@ -1300,6 +1358,39 @@ public:
     std::string GetParameterInfo() const override
     {
         return "Parameters: pInA=Cleanup type (0=disconnect,1=force,2=session), pInB=Force flag, pInC=unused, pOut=Result";
+    }
+};
+
+/**
+ * @brief Wrapper class for TdxServer_SendKBarSeries function
+ */
+class TdxServerSendKBarSeriesFunction : public TdxFunctionBase
+{
+public:
+    /**
+     * @brief Constructor
+     */
+    TdxServerSendKBarSeriesFunction()
+        : TdxFunctionBase(TDX_SERVER_FUNCTION_ID_OFFSET + 10, "TdxServer_SendKBarSeries", "Send K-bar series data to server", "Server", 1, false)
+    {
+    }
+
+    /**
+     * @brief Get unique C-style function pointer
+     * @return Function pointer for TdxServer_SendKBarSeries
+     */
+    pPluginFUNC GetCFunctionPointer() override
+    {
+        return &TdxServer_SendKBarSeries;
+    }
+
+    /**
+     * @brief Provide detailed parameter information
+     * @return Parameter usage description
+     */
+    std::string GetParameterInfo() const override
+    {
+        return "Parameters: pInA=Symbol and period encoding, pInB=Starting index, pInC=K-bar length, pOut=Send result";
     }
 };
 
