@@ -5,6 +5,9 @@
 #include <stdexcept>
 #include <sstream>
 
+// TDX Export macro definition
+#define TDX_EXPORT(funcname) void funcname##(int DataLen,float* pfOUT,float* pfINa,float* pfINb,float* pfINc)
+
 // Forward declaration to avoid circular dependency
 class TdxFunctionRegistry;
 

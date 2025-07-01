@@ -158,9 +158,6 @@ public:
                        const char* hourArray, const char* minuteArray);
 };
 
-// TDX Export macro definition
-#define TDX_EXPORT(funcname) void funcname##(int DataLen,float* pfOUT,float* pfINa,float* pfINb,float* pfINc)
-
 /**
  * @brief TDX API function to set OHLC data for Kbar
  * @param DataLen Number of data points
