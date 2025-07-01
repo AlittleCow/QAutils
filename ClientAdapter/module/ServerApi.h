@@ -6,6 +6,7 @@
 #include <memory>
 #include <zmq.hpp>
 #include <nlohmann/json.hpp>
+#include "../utils/log.h"
 
 using json = nlohmann::json;
 
@@ -48,6 +49,7 @@ private:
     std::string server_host_;
     int server_port_;
     bool connected_;
+    bool context_closed_;  ///< Flag to track if context has been force-closed
 
 public:
     /**
@@ -210,6 +212,14 @@ public:
      * @return true if reconnection successful, false otherwise
      */
     bool reconnect();
+
+    /**
+     * @brief Force close ZMQ context to prevent hanging during DLL unload
+     * 
+     * This method should only be called during DLL unload to ensure
+     * ZMQ context is terminated before destructor is called.
+     */
+    void forceCloseContext();
 
 private:
     /**

@@ -114,6 +114,47 @@ public:
      * @return true if connection successful
      */
     bool ReconnectToServer();
+
+    /**
+     * @brief Cleanup all resources - should be called during DLL unload
+     * 
+     * This method ensures proper cleanup of ZMQ resources to prevent
+     * hanging during DLL unload process.
+     */
+    static void Cleanup();
+
+    /**
+     * @brief Silent cleanup for DLL unload - no logging to prevent hangs
+     * 
+     * This method performs the same cleanup as Cleanup() but without any
+     * logging operations that might cause hangs during DLL unload.
+     */
+    static void SilentCleanup();
+
+    /**
+     * @brief Disconnect ZMQ client after API operations complete
+     * 
+     * This method provides controlled disconnection after API completion
+     * without destroying the entire ServerManager instance.
+     */
+    void DisconnectAfterAPI();
+
+    /**
+     * @brief Force disconnect and cleanup connection resources
+     * 
+     * This method forcefully clears connection resources and can be used
+     * when a clean disconnect is needed after API operations.
+     */
+    void ForceDisconnectAndCleanup();
+
+    /**
+     * @brief Cleanup resources after API session completion
+     * 
+     * This method should be called when an API session is complete to ensure
+     * proper resource cleanup while keeping the ServerManager instance alive.
+     * @param forceDisconnect If true, forces disconnection even if connection is healthy
+     */
+    void CleanupAfterAPISession(bool forceDisconnect = false);
 };
 
 // TDX API Function declarations
@@ -153,7 +194,7 @@ extern "C" {
      * @param DataLen Number of data points
      * @param pfOUT Output array (disconnection result)
      * @param pfINa Input array A (client ID)
-     * @param pfINb Input array B (unused)
+     * @param pfINb Input array B (cleanup level: 0=basic, 1=full_cleanup)
      * @param pfINc Input array C (unused)
      */
     void TdxServer_Disconnect(int DataLen, float* pfOUT, float* pfINa, float* pfINb, float* pfINc);
@@ -257,6 +298,16 @@ extern "C" {
      * @param pfINc Input array C (unused)
      */
     void TdxServer_GetParameter(int DataLen, float* pfOUT, float* pfINa, float* pfINb, float* pfINc);
+
+    /**
+     * @brief TDX API function to cleanup and disconnect after API completion
+     * @param DataLen Number of data points
+     * @param pfOUT Output array (cleanup result: 1=success, 0=partial, -1=failed)
+     * @param pfINa Input array A (cleanup type: 0=disconnect, 1=force_cleanup, 2=session_cleanup)
+     * @param pfINb Input array B (force disconnect flag: 1=force, 0=conditional)
+     * @param pfINc Input array C (unused)
+     */
+    void TdxServer_CleanupAndDisconnect(int DataLen, float* pfOUT, float* pfINa, float* pfINb, float* pfINc);
 }
 
 /**

@@ -13,7 +13,7 @@ namespace QAUtils {
  * @param server_port The port number of the server
  */
 ZmqClient::ZmqClient(const std::string& server_host, int server_port)
-    : server_host_(server_host), server_port_(server_port), connected_(false) {
+    : server_host_(server_host), server_port_(server_port), connected_(false), context_closed_(false) {
     context_ = std::make_unique<zmq::context_t>(1);
     socket_ = std::make_unique<zmq::socket_t>(*context_, zmq::socket_type::req);
 }
@@ -23,6 +23,16 @@ ZmqClient::ZmqClient(const std::string& server_host, int server_port)
  */
 ZmqClient::~ZmqClient() {
     disconnect();
+    
+    // Properly terminate ZMQ context to prevent hanging during DLL unload
+    // Only close if context hasn't been force-closed already
+    if (context_ && !context_closed_) {
+        try {
+            context_->close();
+        } catch (...) {
+            // Ignore exceptions during cleanup
+        }
+    }
 }
 
 /**
@@ -35,10 +45,10 @@ bool ZmqClient::connect() {
         std::string endpoint = "tcp://" + server_host_ + ":" + std::to_string(server_port_);
         socket_->connect(endpoint);
         connected_ = true;
-        std::cout << "Connected to QuantServer at " << server_host_ << ":" << server_port_ << std::endl;
+        log_info("Connected to QuantServer at %s:%d", server_host_.c_str(), server_port_);
         return true;
     } catch (const std::exception& e) {
-        std::cerr << "Error connecting to server: " << e.what() << std::endl;
+        log_error("Error connecting to server: %s", e.what());
         connected_ = false;
         return false;
     }
@@ -49,9 +59,18 @@ bool ZmqClient::connect() {
  */
 void ZmqClient::disconnect() {
     if (connected_) {
-        socket_->close();
-        connected_ = false;
-        std::cout << "Disconnected from QuantServer" << std::endl;
+        try {
+            // Set linger to 0 to avoid hanging on close
+            if (socket_) {
+                socket_->set(zmq::sockopt::linger, 0);
+                socket_->close();
+            }
+            connected_ = false;
+            log_debug("Disconnected from QuantServer");
+        } catch (const std::exception& e) {
+            log_error("Error during disconnect: %s", e.what());
+            connected_ = false;
+        }
     }
 }
 
@@ -72,7 +91,7 @@ bool ZmqClient::isConnected() const {
  */
 json ZmqClient::sendRequest(const json& message) {
     if (!connected_) {
-        std::cerr << "Client not connected to server" << std::endl;
+        log_error("Client not connected to server");
         return json{};
     }
 
@@ -87,17 +106,17 @@ json ZmqClient::sendRequest(const json& message) {
         int poll_result = zmq::poll(poll_items, 1, std::chrono::milliseconds(5000)); // 5 second timeout
         
         if (poll_result == 0) {
-            std::cerr << "Send timeout: server not responding" << std::endl;
+            log_error("Send timeout: server not responding");
             connected_ = false; // Mark as disconnected
             return json{{"status", "error"}, {"message", "send timeout"}};
         } else if (poll_result < 0) {
-            std::cerr << "Poll error during send" << std::endl;
+            log_error("Poll error during send");
             connected_ = false;
             return json{{"status", "error"}, {"message", "poll error"}};
         }
         
         if (!socket_->send(request, zmq::send_flags::dontwait)) {
-            std::cerr << "Failed to send request" << std::endl;
+            log_error("Failed to send request");
             connected_ = false;
             return json{{"status", "error"}, {"message", "send failed"}};
         }
@@ -107,7 +126,7 @@ json ZmqClient::sendRequest(const json& message) {
         poll_result = zmq::poll(recv_poll_items, 1, std::chrono::milliseconds(5000)); // 5 second timeout
         
         if (poll_result == 0) {
-            std::cerr << "Receive timeout: server not responding" << std::endl;
+            log_error("Receive timeout: server not responding");
             connected_ = false; // Mark as disconnected
             // Reset socket to clean state
             socket_->close();
@@ -116,14 +135,14 @@ json ZmqClient::sendRequest(const json& message) {
             socket_->connect(endpoint);
             return json{{"status", "error"}, {"message", "receive timeout"}};
         } else if (poll_result < 0) {
-            std::cerr << "Poll error during receive" << std::endl;
+            log_error("Poll error during receive");
             connected_ = false;
             return json{{"status", "error"}, {"message", "poll error"}};
         }
 
         zmq::message_t reply;
         if (!socket_->recv(reply, zmq::recv_flags::dontwait)) {
-            std::cerr << "Failed to receive response" << std::endl;
+            log_error("Failed to receive response");
             connected_ = false;
             return json{{"status", "error"}, {"message", "receive failed"}};
         }
@@ -133,10 +152,10 @@ json ZmqClient::sendRequest(const json& message) {
         return json::parse(reply_str);
 
     } catch (const json::parse_error& e) {
-        std::cerr << "JSON parse error: " << e.what() << std::endl;
+        log_error("JSON parse error: %s", e.what());
         return json{{"status", "error"}, {"message", "json parse error"}};
     } catch (const std::exception& e) {
-        std::cerr << "Error sending request: " << e.what() << std::endl;
+        log_error("Error sending request: %s", e.what());
         connected_ = false;
         return json{{"status", "error"}, {"message", e.what()}};
     }
@@ -473,18 +492,47 @@ bool ZmqClient::reconnect() {
         json response = sendRequest(test_message);
         if (response.contains("status") && response["status"] == "success") {
             connected_ = true;
-            std::cout << "Successfully reconnected to QuantServer at " << server_host_ << ":" << server_port_ << std::endl;
+            log_info("Successfully reconnected to QuantServer at %s:%d", server_host_.c_str(), server_port_);
             return true;
         } else {
             connected_ = false;
-            std::cerr << "Reconnection test failed: " << response.dump() << std::endl;
+            log_error("Reconnection test failed: %s", response.dump().c_str());
             return false;
         }
         
     } catch (const std::exception& e) {
         connected_ = false;
-        std::cerr << "Error during reconnection: " << e.what() << std::endl;
+        log_error("Error during reconnection: %s", e.what());
         return false;
+    }
+}
+
+/**
+ * @brief Force close ZMQ context to prevent hanging during DLL unload
+ * 
+ * This method should only be called during DLL unload to ensure
+ * ZMQ context is terminated before destructor is called.
+ */
+void ZmqClient::forceCloseContext() {
+    try {
+        // First disconnect if connected
+        if (connected_) {
+            connected_ = false;
+            if (socket_) {
+                socket_->set(zmq::sockopt::linger, 0);
+                socket_->close();
+                log_debug("ZMQ client disconnected");
+            }
+        }
+        
+        // Force close context to prevent hanging
+        if (context_ && !context_closed_) {
+            context_->close();
+            context_closed_ = true;
+            log_debug("ZMQ context closed");
+        }
+    } catch (...) {
+        // Ignore all exceptions during forced cleanup
     }
 }
 

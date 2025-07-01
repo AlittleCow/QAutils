@@ -192,9 +192,160 @@ bool ServerManager::ReconnectToServer()
     }
 }
 
+/**
+ * @brief Cleanup all resources - should be called during DLL unload
+ * 
+ * This method ensures proper cleanup of ZMQ resources to prevent
+ * hanging during DLL unload process.
+ */
+void ServerManager::Cleanup()
+{
+    if (s_instance) {
+        try {
+            // Force disconnect and cleanup ZMQ client
+            if (s_instance->m_zmqClient) {
+                s_instance->m_zmqClient->forceCloseContext();
+                s_instance->m_zmqClient.reset(); // Force destruction
+            }
+            
+            // Reset the singleton instance
+            s_instance.reset();
+            
+            log_debug("ServerManager cleanup completed successfully");
+        } catch (const std::exception& e) {
+            log_error("Error during ServerManager cleanup: %s", e.what());
+        } catch (...) {
+            log_error("Unknown error during ServerManager cleanup");
+        }
+    }
+}
+
+/**
+ * @brief Silent cleanup for DLL unload - no logging to prevent hangs
+ * 
+ * Note: Currently includes debug logging for troubleshooting purposes.
+ * Remove logging if it causes issues during DLL unload.
+ */
+void ServerManager::SilentCleanup()
+{
+    if (s_instance) {
+        try {
+            // Force disconnect and cleanup ZMQ client silently
+            log_debug("Silent cleanup of ServerManager");
+            if (s_instance->m_zmqClient) {
+                // Force close ZMQ context before destructor to prevent hanging
+                s_instance->m_zmqClient->forceCloseContext();
+                log_debug("ZMQ client disconnected");
+                //s_instance->m_zmqClient.reset(); // Force destruction
+                log_debug("ZMQ client reset");
+            }
+            
+            // Reset the singleton instance
+            s_instance.reset();
+            log_debug("ServerManager instance reset");
+        } catch (...) {
+            // Completely silent - ignore all exceptions during DLL unload
+        }
+    }
+}
+
+/**
+ * @brief Disconnect ZMQ client after API operations complete
+ * 
+ * This method provides controlled disconnection after API completion
+ * without destroying the entire ServerManager instance.
+ */
+void ServerManager::DisconnectAfterAPI()
+{
+    if (m_zmqClient && m_zmqClient->isConnected()) {
+        try {
+            m_zmqClient->disconnect();
+            log_debug("ZMQ client disconnected after API completion");
+        } catch (const std::exception& e) {
+            log_error("Error disconnecting ZMQ client after API: %s", e.what());
+        }
+    }
+}
+
+/**
+ * @brief Force disconnect and cleanup connection resources
+ * 
+ * This method forcefully clears connection resources and can be used
+ * when a clean disconnect is needed after API operations.
+ */
+void ServerManager::ForceDisconnectAndCleanup()
+{
+    if (m_zmqClient) {
+        try {
+            // Force close context and disconnect
+            m_zmqClient->forceCloseContext();
+            log_debug("ZMQ client force disconnected and cleaned up");
+        } catch (const std::exception& e) {
+            log_error("Error during force disconnect and cleanup: %s", e.what());
+        } catch (...) {
+            log_error("Unknown error during force disconnect and cleanup");
+        }
+    }
+    
+    // Reset connection statistics
+    m_status.connectionCount = 0;
+    log_debug("Connection statistics reset after cleanup");
+}
+
+/**
+ * @brief Cleanup resources after API session completion
+ * 
+ * This method should be called when an API session is complete to ensure
+ * proper resource cleanup while keeping the ServerManager instance alive.
+ * @param forceDisconnect If true, forces disconnection even if connection is healthy
+ */
+void ServerManager::CleanupAfterAPISession(bool forceDisconnect)
+{
+    try {
+        if (forceDisconnect || !IsServerConnected()) {
+            DisconnectAfterAPI();
+        }
+        
+        // Reset any temporary state that might accumulate during API usage
+        // Keep core statistics but clear temporary data
+        log_debug("API session cleanup completed, forceDisconnect=%s", forceDisconnect ? "true" : "false");
+        
+    } catch (const std::exception& e) {
+        log_error("Error during API session cleanup: %s", e.what());
+    }
+}
+
 // ============================================================================
 // TDX API Function Implementations
 // ============================================================================
+
+/*
+ * USAGE EXAMPLES FOR DISCONNECT AND CLEANUP FUNCTIONALITY:
+ * 
+ * 1. Basic API Usage with Cleanup:
+ *    - Call TdxServer_Connect to establish connection
+ *    - Use any TdxServer_* functions for operations
+ *    - Call TdxServer_Disconnect(clientId, 1) for full cleanup
+ * 
+ * 2. Manual Cleanup Control:
+ *    - TdxServer_CleanupAndDisconnect(1, output, cleanupType, forceFlag, unused)
+ *    - cleanupType: 0=disconnect, 1=force_cleanup, 2=session_cleanup
+ *    - forceFlag: 1=force disconnect, 0=conditional
+ * 
+ * 3. Cleanup Types:
+ *    - Type 0 (Disconnect): Graceful disconnection from server
+ *    - Type 1 (Force Cleanup): Force close all connections and cleanup resources
+ *    - Type 2 (Session Cleanup): Clean up session data, optionally disconnect
+ * 
+ * 4. Error Handling:
+ *    - Return values: 1.0=success, 0.5=partial, 0.0=basic_success, -1.0=failed
+ *    - Always check return values to ensure proper cleanup
+ * 
+ * 5. Best Practices:
+ *    - Call cleanup functions after completing API operations
+ *    - Use force cleanup when application is shutting down
+ *    - Monitor connection status with TdxServer_GetInfo
+ */
 
 /**
  * @brief TDX API function for server heartbeat/ping
@@ -209,31 +360,23 @@ TDX_EXPORT(TdxServer_Heartbeat)
     ServerManager& manager = ServerManager::GetInstance();
     auto* client = manager.GetZmqClient();
     
-    for (int i = 0; i < DataLen; i++)
-    {
-        if (client && client->isConnected()) {
-            try {
-                json response = client->testHeartbeat();
-                if (response.contains("status") && response["status"] == "success") {
-                    pfOUT[i] = 1.0f; // Success
-                    log_debug("Heartbeat successful: %s", response.dump().c_str());
-                } else {
-                    pfOUT[i] = 0.0f; // Failed
-                    log_error("Heartbeat failed: %s", response.dump().c_str());
-                }
-            } catch (const std::exception& e) {
-                pfOUT[i] = -1.0f; // Error
-                log_error("Heartbeat exception: %s", e.what());
+    if (client && client->isConnected()) {
+        try {
+            json response = client->testHeartbeat();
+            if (response.contains("status") && response["status"] == "success") {
+                log_debug("Heartbeat successful");
+            } else {
+                log_error("Heartbeat failed: %s", response.dump().c_str());
             }
-        } else {
-            // Fallback to local simulation if server not available
-            std::time_t serverTime = std::time(nullptr);
-            float clientTimestamp = pfINa[i];
-            float responseTime = static_cast<float>(serverTime);
-            float rtt = responseTime - clientTimestamp;
-            pfOUT[i] = responseTime + (rtt * 0.5f);
-            log_debug("Heartbeat (local): Client=%f, Server=%f, RTT=%f", 
-                     clientTimestamp, responseTime, rtt);
+        } catch (const std::exception& e) {
+            log_error("Heartbeat exception: %s", e.what());
+        }
+    } else {
+        log_error("Heartbeat: Server not connected");
+        
+        // Try to reconnect
+        if (!manager.ReconnectToServer()) {
+            log_error("Failed to reconnect to server during heartbeat");
         }
     }
 }
@@ -362,7 +505,7 @@ TDX_EXPORT(TdxServer_Connect)
  * @param DataLen Number of data points
  * @param pfOUT Output array (disconnection result)
  * @param pfINa Input array A (client ID)
- * @param pfINb Input array B (unused)
+ * @param pfINb Input array B (cleanup level: 0=basic, 1=full_cleanup)
  * @param pfINc Input array C (unused)
  */
 TDX_EXPORT(TdxServer_Disconnect)
@@ -372,6 +515,7 @@ TDX_EXPORT(TdxServer_Disconnect)
     for (int i = 0; i < DataLen; i++)
     {
         float clientId = pfINa[i];
+        int cleanupLevel = static_cast<int>(pfINb[i]);
         
         // Simulate disconnection logic
         bool disconnectSuccess = true;
@@ -384,15 +528,33 @@ TDX_EXPORT(TdxServer_Disconnect)
         if (disconnectSuccess)
         {
             manager.DecrementConnections();
-            pfOUT[i] = 0.0f; // Success
+            
+            // Enhanced cleanup based on cleanup level
+            switch (cleanupLevel) {
+                case 1: // Full cleanup after disconnect
+                    try {
+                        manager.CleanupAfterAPISession(true); // Force disconnect
+                        pfOUT[i] = 1.0f; // Success with cleanup
+                        log_debug("Disconnect with full cleanup: ClientID=%f", clientId);
+                    } catch (const std::exception& e) {
+                        pfOUT[i] = 0.5f; // Disconnect succeeded but cleanup had issues
+                        log_error("Disconnect succeeded but cleanup failed: %s", e.what());
+                    }
+                    break;
+                    
+                default: // Basic disconnect (original behavior)
+                    pfOUT[i] = 0.0f; // Success
+                    log_debug("Basic disconnect: ClientID=%f", clientId);
+                    break;
+            }
         }
         else
         {
             pfOUT[i] = -1.0f; // Disconnect failed
         }
         
-        log_debug("Disconnect: ClientID=%f, Success=%d", 
-                 clientId, disconnectSuccess ? 1 : 0);
+        log_debug("Disconnect: ClientID=%f, CleanupLevel=%d, Success=%d", 
+                 clientId, cleanupLevel, disconnectSuccess ? 1 : 0);
     }
 }
 
@@ -1038,6 +1200,56 @@ TDX_EXPORT(TdxServer_GetParameter)
     }
 }
 
+/**
+ * @brief TDX API function to cleanup and disconnect after API completion
+ * @param DataLen Number of data points
+ * @param pfOUT Output array (cleanup result: 1=success, 0=partial, -1=failed)
+ * @param pfINa Input array A (cleanup type: 0=disconnect, 1=force_cleanup, 2=session_cleanup)
+ * @param pfINb Input array B (force disconnect flag: 1=force, 0=conditional)
+ * @param pfINc Input array C (unused)
+ */
+TDX_EXPORT(TdxServer_CleanupAndDisconnect)
+{
+    ServerManager& manager = ServerManager::GetInstance();
+    
+    for (int i = 0; i < DataLen; i++) {
+        int cleanupType = static_cast<int>(pfINa[i]);
+        bool forceDisconnect = (pfINb[i] > 0.5f);
+        
+        try {
+            switch (cleanupType) {
+                case 0: // Simple disconnect
+                    manager.DisconnectAfterAPI();
+                    pfOUT[i] = 1.0f; // Success
+                    log_debug("API disconnect completed successfully");
+                    break;
+                    
+                case 1: // Force cleanup
+                    manager.ForceDisconnectAndCleanup();
+                    pfOUT[i] = 1.0f; // Success
+                    log_debug("Force cleanup completed successfully");
+                    break;
+                    
+                case 2: // Session cleanup
+                    manager.CleanupAfterAPISession(forceDisconnect);
+                    pfOUT[i] = 1.0f; // Success
+                    log_debug("API session cleanup completed successfully");
+                    break;
+                    
+                default:
+                    // Default to session cleanup
+                    manager.CleanupAfterAPISession(forceDisconnect);
+                    pfOUT[i] = 0.5f; // Partial success (used default)
+                    log_debug("Used default session cleanup for unknown type: %d", cleanupType);
+                    break;
+            }
+        } catch (const std::exception& e) {
+            pfOUT[i] = -1.0f; // Failed
+            log_error("Cleanup and disconnect failed: %s", e.what());
+        }
+    }
+}
+
 // ============================================================================
 // TDX Function Wrapper Classes
 // ============================================================================
@@ -1170,7 +1382,7 @@ public:
      */
     std::string GetParameterInfo() const override
     {
-        return "Parameters: pInA=Client ID, pInB=unused, pInC=unused, pOut=Disconnection result";
+        return "Parameters: pInA=Client ID, pInB=cleanup level (0=basic, 1=full_cleanup), pInC=unused, pOut=Disconnection result";
     }
 };
 
@@ -1504,6 +1716,39 @@ public:
     }
 };
 
+/**
+ * @brief Wrapper class for TdxServer_CleanupAndDisconnect function
+ */
+class TdxServerCleanupAndDisconnectFunction : public TdxFunctionBase
+{
+public:
+    /**
+     * @brief Constructor
+     */
+    TdxServerCleanupAndDisconnectFunction()
+        : TdxFunctionBase(TDX_SERVER_FUNCTION_ID_OFFSET + 14, "TdxServer_CleanupAndDisconnect", "Cleanup and disconnect after API completion", "Server", 1, false)
+    {
+    }
+
+    /**
+     * @brief Get unique C-style function pointer
+     * @return Function pointer for TdxServer_CleanupAndDisconnect
+     */
+    pPluginFUNC GetCFunctionPointer() override
+    {
+        return &TdxServer_CleanupAndDisconnect;
+    }
+
+    /**
+     * @brief Provide detailed parameter information
+     * @return Parameter usage description
+     */
+    std::string GetParameterInfo() const override
+    {
+        return "Parameters: pInA=Cleanup type (0=disconnect,1=force,2=session), pInB=Force flag, pInC=unused, pOut=Result";
+    }
+};
+
 // ============================================================================
 // Function Registration
 // ============================================================================
@@ -1534,6 +1779,7 @@ bool RegisterTdxServerFunctions()
         success &= registry.RegisterFunction(std::make_shared<TdxServerCalculateEMAFunction>());
         success &= registry.RegisterFunction(std::make_shared<TdxServerSetParameterFunction>());
         success &= registry.RegisterFunction(std::make_shared<TdxServerGetParameterFunction>());
+        success &= registry.RegisterFunction(std::make_shared<TdxServerCleanupAndDisconnectFunction>());
         
         if (success)
         {

@@ -213,6 +213,9 @@ message(STATUS "Compiler: ${CMAKE_CXX_COMPILER_ID}")
 message(STATUS "Install prefix: ${CMAKE_INSTALL_PREFIX}")
 message(STATUS "=====================================")
 
+# Add test subdirectory
+add_subdirectory(test)
+
 # Package configuration
 set(CPACK_PACKAGE_NAME "QAUtilsTdxPlugin")
 set(CPACK_PACKAGE_VERSION ${PROJECT_VERSION})

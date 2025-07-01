@@ -201,6 +201,9 @@ void TdxPluginManager::Cleanup()
     {
         log_debug("Cleaning up TDX Plugin System...");
         
+        // First cleanup server resources (ZMQ client) to prevent hanging
+        ServerManager::Cleanup();
+        
         // Clear all registered functions
         auto& registry = TdxFunctionRegistry::GetInstance();
         registry.Clear();
@@ -322,6 +325,10 @@ BOOL APIENTRY DllMain(HMODULE hinstDLL, DWORD fdwReason, LPVOID lpvReserved)
         
     case DLL_PROCESS_DETACH:
         // DLL is being unloaded
+        // First cleanup ZMQ resources silently to prevent hanging
+        ServerManager::SilentCleanup();
+        
+        // Then do regular cleanup
         TdxPluginManager::Cleanup();
         log_debug("TDX Plugin DLL unloaded");
         
