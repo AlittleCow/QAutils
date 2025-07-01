@@ -71,9 +71,24 @@ ServerManager::ServerManager()
  */
 ServerManager::~ServerManager()
 {
-    if (m_zmqClient) {
+    log_debug("ServerManager destructor called");
+    log_debug("Checking ZMQ client state in destructor");
+    
+    if (m_zmqClient && m_zmqClient->isConnected()) {
+        log_debug("Disconnecting ZMQ client");
         m_zmqClient->disconnect();
+        log_debug("ZMQ client disconnected");
+    } else if (m_zmqClient) {
+        log_debug("ZMQ client already disconnected, skipping disconnect in destructor");
+    } else {
+        log_debug("ZMQ client is null in destructor");
     }
+    
+    log_debug("About to reset ZMQ client unique_ptr");
+    m_zmqClient.reset(); // Explicitly reset to trigger ZmqClient destructor
+    log_debug("ZMQ client unique_ptr reset completed");
+    
+    log_debug("ServerManager destructor completed successfully");
 }
 
 /**
@@ -87,6 +102,28 @@ ServerManager& ServerManager::GetInstance()
         s_instance.reset(new ServerManager());
     }
     return *s_instance;
+}
+
+/**
+ * @brief Cleanup and destroy the singleton instance
+ * 
+ * This method should be called during plugin cleanup to ensure
+ * the ServerManager destructor is called and resources are properly cleaned up.
+ */
+void ServerManager::Cleanup()
+{
+    if (s_instance) {
+        log_debug("Explicitly cleaning up ServerManager singleton");
+        
+        // Explicitly disconnect ZMQ client before destroying the instance
+        // to avoid double disconnect during DLL unload
+        if (s_instance->m_zmqClient && s_instance->m_zmqClient->isConnected()) {
+            log_debug("Disconnecting ZMQ client before ServerManager destruction");
+            s_instance->m_zmqClient->disconnect();
+        }
+        
+        s_instance.reset(); // This will call the destructor
+    }
 }
 
 /**
@@ -193,63 +230,6 @@ bool ServerManager::ReconnectToServer()
 }
 
 /**
- * @brief Cleanup all resources - should be called during DLL unload
- * 
- * This method ensures proper cleanup of ZMQ resources to prevent
- * hanging during DLL unload process.
- */
-void ServerManager::Cleanup()
-{
-    if (s_instance) {
-        try {
-            // Force disconnect and cleanup ZMQ client
-            if (s_instance->m_zmqClient) {
-                s_instance->m_zmqClient->forceCloseContext();
-                s_instance->m_zmqClient.reset(); // Force destruction
-            }
-            
-            // Reset the singleton instance
-            s_instance.reset();
-            
-            log_debug("ServerManager cleanup completed successfully");
-        } catch (const std::exception& e) {
-            log_error("Error during ServerManager cleanup: %s", e.what());
-        } catch (...) {
-            log_error("Unknown error during ServerManager cleanup");
-        }
-    }
-}
-
-/**
- * @brief Silent cleanup for DLL unload - no logging to prevent hangs
- * 
- * Note: Currently includes debug logging for troubleshooting purposes.
- * Remove logging if it causes issues during DLL unload.
- */
-void ServerManager::SilentCleanup()
-{
-    if (s_instance) {
-        try {
-            // Force disconnect and cleanup ZMQ client silently
-            log_debug("Silent cleanup of ServerManager");
-            if (s_instance->m_zmqClient) {
-                // Force close ZMQ context before destructor to prevent hanging
-                s_instance->m_zmqClient->forceCloseContext();
-                log_debug("ZMQ client disconnected");
-                //s_instance->m_zmqClient.reset(); // Force destruction
-                log_debug("ZMQ client reset");
-            }
-            
-            // Reset the singleton instance
-            s_instance.reset();
-            log_debug("ServerManager instance reset");
-        } catch (...) {
-            // Completely silent - ignore all exceptions during DLL unload
-        }
-    }
-}
-
-/**
  * @brief Disconnect ZMQ client after API operations complete
  * 
  * This method provides controlled disconnection after API completion
@@ -265,31 +245,6 @@ void ServerManager::DisconnectAfterAPI()
             log_error("Error disconnecting ZMQ client after API: %s", e.what());
         }
     }
-}
-
-/**
- * @brief Force disconnect and cleanup connection resources
- * 
- * This method forcefully clears connection resources and can be used
- * when a clean disconnect is needed after API operations.
- */
-void ServerManager::ForceDisconnectAndCleanup()
-{
-    if (m_zmqClient) {
-        try {
-            // Force close context and disconnect
-            m_zmqClient->forceCloseContext();
-            log_debug("ZMQ client force disconnected and cleaned up");
-        } catch (const std::exception& e) {
-            log_error("Error during force disconnect and cleanup: %s", e.what());
-        } catch (...) {
-            log_error("Unknown error during force disconnect and cleanup");
-        }
-    }
-    
-    // Reset connection statistics
-    m_status.connectionCount = 0;
-    log_debug("Connection statistics reset after cleanup");
 }
 
 /**
@@ -1222,12 +1177,6 @@ TDX_EXPORT(TdxServer_CleanupAndDisconnect)
                     manager.DisconnectAfterAPI();
                     pfOUT[i] = 1.0f; // Success
                     log_debug("API disconnect completed successfully");
-                    break;
-                    
-                case 1: // Force cleanup
-                    manager.ForceDisconnectAndCleanup();
-                    pfOUT[i] = 1.0f; // Success
-                    log_debug("Force cleanup completed successfully");
                     break;
                     
                 case 2: // Session cleanup

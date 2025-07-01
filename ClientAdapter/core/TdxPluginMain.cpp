@@ -201,7 +201,7 @@ void TdxPluginManager::Cleanup()
     {
         log_debug("Cleaning up TDX Plugin System...");
         
-        // First cleanup server resources (ZMQ client) to prevent hanging
+        // Explicitly cleanup ServerManager singleton before clearing registry
         ServerManager::Cleanup();
         
         // Clear all registered functions
@@ -318,17 +318,13 @@ BOOL APIENTRY DllMain(HMODULE hinstDLL, DWORD fdwReason, LPVOID lpvReserved)
         // Initialize logging
         log_init();
         log_set_level(LOG_DEBUG);
-        
         // DLL is being loaded
         log_debug("TDX Plugin DLL loaded");
         break;
         
     case DLL_PROCESS_DETACH:
-        // DLL is being unloaded
-        // First cleanup ZMQ resources silently to prevent hanging
-        ServerManager::SilentCleanup();
-        
-        // Then do regular cleanup
+        // DLL is being unloaded        
+
         TdxPluginManager::Cleanup();
         log_debug("TDX Plugin DLL unloaded");
         

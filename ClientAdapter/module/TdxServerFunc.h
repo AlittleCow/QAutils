@@ -65,6 +65,14 @@ public:
     static ServerManager& GetInstance();
     
     /**
+     * @brief Cleanup and destroy the singleton instance
+     * 
+     * This method should be called during plugin cleanup to ensure
+     * the ServerManager destructor is called and resources are properly cleaned up.
+     */
+    static void Cleanup();
+    
+    /**
      * @brief Get current server status
      * @return Current ServerStatus object
      */
@@ -116,36 +124,12 @@ public:
     bool ReconnectToServer();
 
     /**
-     * @brief Cleanup all resources - should be called during DLL unload
-     * 
-     * This method ensures proper cleanup of ZMQ resources to prevent
-     * hanging during DLL unload process.
-     */
-    static void Cleanup();
-
-    /**
-     * @brief Silent cleanup for DLL unload - no logging to prevent hangs
-     * 
-     * This method performs the same cleanup as Cleanup() but without any
-     * logging operations that might cause hangs during DLL unload.
-     */
-    static void SilentCleanup();
-
-    /**
      * @brief Disconnect ZMQ client after API operations complete
      * 
      * This method provides controlled disconnection after API completion
      * without destroying the entire ServerManager instance.
      */
     void DisconnectAfterAPI();
-
-    /**
-     * @brief Force disconnect and cleanup connection resources
-     * 
-     * This method forcefully clears connection resources and can be used
-     * when a clean disconnect is needed after API operations.
-     */
-    void ForceDisconnectAndCleanup();
 
     /**
      * @brief Cleanup resources after API session completion

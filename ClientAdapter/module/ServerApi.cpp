@@ -22,17 +22,36 @@ ZmqClient::ZmqClient(const std::string& server_host, int server_port)
  * @brief Destroy the ZmqClient object and cleanup resources
  */
 ZmqClient::~ZmqClient() {
-    disconnect();
+    log_debug("ZmqClient destructor started");
     
-    // Properly terminate ZMQ context to prevent hanging during DLL unload
-    // Only close if context hasn't been force-closed already
-    if (context_ && !context_closed_) {
-        try {
-            context_->close();
-        } catch (...) {
-            // Ignore exceptions during cleanup
-        }
+    if (connected_) {
+        log_debug("ZmqClient was connected, calling disconnect");
+        disconnect();
+        log_debug("ZMQ client disconnected in destructor");
+    } else {
+        log_debug("ZMQ client already disconnected, skipping disconnect in destructor");
     }
+    
+    // During DLL unload, we need to avoid calling ZMQ destructors
+    // Release the unique_ptrs without calling their destructors
+    log_debug("Releasing ZMQ objects without calling destructors to prevent DLL unload hanging");
+    
+    if (socket_) {
+        // Release the unique_ptr without calling the destructor
+        socket_.release();
+        log_debug("ZMQ socket unique_ptr released (destructor bypassed)");
+    }
+    
+    if (context_) {
+        // Release the unique_ptr without calling the destructor  
+        context_.release();
+        log_debug("ZMQ context unique_ptr released (destructor bypassed)");
+    }
+    
+    // Don't even null the pointers - just let them be destroyed naturally
+    context_closed_ = true;
+    
+    log_debug("ZmqClient destructor completed successfully");
 }
 
 /**
@@ -583,35 +602,6 @@ bool ZmqClient::reconnect() {
         connected_ = false;
         log_error("Error during reconnection: %s", e.what());
         return false;
-    }
-}
-
-/**
- * @brief Force close ZMQ context to prevent hanging during DLL unload
- * 
- * This method should only be called during DLL unload to ensure
- * ZMQ context is terminated before destructor is called.
- */
-void ZmqClient::forceCloseContext() {
-    try {
-        // First disconnect if connected
-        if (connected_) {
-            connected_ = false;
-            if (socket_) {
-                socket_->set(zmq::sockopt::linger, 0);
-                socket_->close();
-                log_debug("ZMQ client disconnected");
-            }
-        }
-        
-        // Force close context to prevent hanging
-        if (context_ && !context_closed_) {
-            context_->close();
-            context_closed_ = true;
-            log_debug("ZMQ context closed");
-        }
-    } catch (...) {
-        // Ignore all exceptions during forced cleanup
     }
 }
 
