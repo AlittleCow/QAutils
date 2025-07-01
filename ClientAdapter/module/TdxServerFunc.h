@@ -5,6 +5,11 @@
 #include <memory>
 #include <ctime>
 
+// Forward declarations
+namespace QAUtils {
+    class ZmqClient;
+}
+
 /**
  * @brief Server status information structure
  */
@@ -40,6 +45,7 @@ private:
     static std::unique_ptr<ServerManager> s_instance;
     ServerStatus m_status;
     std::time_t m_startTime;
+    std::unique_ptr<QAUtils::ZmqClient> m_zmqClient;
     
     /**
      * @brief Private constructor for singleton
@@ -47,6 +53,11 @@ private:
     ServerManager();
 
 public:
+    /**
+     * @brief Destructor for ServerManager
+     */
+    ~ServerManager();
+
     /**
      * @brief Get singleton instance
      * @return Reference to ServerManager instance
@@ -85,6 +96,24 @@ public:
      * @brief Reset server statistics
      */
     void Reset();
+
+    /**
+     * @brief Get ZMQ client instance
+     * @return Pointer to ZMQ client or nullptr if not available
+     */
+    QAUtils::ZmqClient* GetZmqClient();
+
+    /**
+     * @brief Check if server is connected
+     * @return true if ZMQ client is connected to QuantServer
+     */
+    bool IsServerConnected() const;
+
+    /**
+     * @brief Reconnect to server if disconnected
+     * @return true if connection successful
+     */
+    bool ReconnectToServer();
 };
 
 // TDX API Function declarations
@@ -148,6 +177,86 @@ extern "C" {
      * @param pfINc Input array C (unused)
      */
     void TdxServer_GetStats(int DataLen, float* pfOUT, float* pfINa, float* pfINb, float* pfINc);
+
+    /**
+     * @brief TDX API function to send single K-bar data to server
+     * @param DataLen Number of data points
+     * @param pfOUT Output array (server response)
+     * @param pfINa Input array A (encoded symbol and timestamp)
+     * @param pfINb Input array B (OHLC data packed: open*10000 + high)
+     * @param pfINc Input array C (OHLC data packed: low*10000 + close, volume in high 16 bits)
+     */
+    void TdxServer_SendKBar(int DataLen, float* pfOUT, float* pfINa, float* pfINb, float* pfINc);
+
+    /**
+     * @brief TDX API function to calculate Simple Moving Average
+     * @param DataLen Number of data points
+     * @param pfOUT Output array (SMA values)
+     * @param pfINa Input array A (price data)
+     * @param pfINb Input array B (period)
+     * @param pfINc Input array C (unused)
+     */
+    void TdxServer_CalculateSMA(int DataLen, float* pfOUT, float* pfINa, float* pfINb, float* pfINc);
+
+    /**
+     * @brief TDX API function to calculate RSI (Relative Strength Index)
+     * @param DataLen Number of data points
+     * @param pfOUT Output array (RSI values)
+     * @param pfINa Input array A (price data)
+     * @param pfINb Input array B (period)
+     * @param pfINc Input array C (unused)
+     */
+    void TdxServer_CalculateRSI(int DataLen, float* pfOUT, float* pfINa, float* pfINb, float* pfINc);
+
+    /**
+     * @brief TDX API function to calculate Bollinger Bands
+     * @param DataLen Number of data points
+     * @param pfOUT Output array (encoded Bollinger Bands data)
+     * @param pfINa Input array A (price data)
+     * @param pfINb Input array B (period)
+     * @param pfINc Input array C (standard deviation multiplier * 100)
+     */
+    void TdxServer_CalculateBollinger(int DataLen, float* pfOUT, float* pfINa, float* pfINb, float* pfINc);
+
+    /**
+     * @brief TDX API function to send K-bar series data to server
+     * @param DataLen Number of data points
+     * @param pfOUT Output array (server response)
+     * @param pfINa Input array A (price data - close prices)
+     * @param pfINb Input array B (volume data)
+     * @param pfINc Input array C (symbol encoding)
+     */
+    void TdxServer_SendKBarSeries(int DataLen, float* pfOUT, float* pfINa, float* pfINb, float* pfINc);
+
+    /**
+     * @brief TDX API function to calculate EMA (Exponential Moving Average)
+     * @param DataLen Number of data points
+     * @param pfOUT Output array (EMA values)
+     * @param pfINa Input array A (price data)
+     * @param pfINb Input array B (period)
+     * @param pfINc Input array C (unused)
+     */
+    void TdxServer_CalculateEMA(int DataLen, float* pfOUT, float* pfINa, float* pfINb, float* pfINc);
+
+    /**
+     * @brief TDX API function to set server parameters
+     * @param DataLen Number of data points
+     * @param pfOUT Output array (operation result)
+     * @param pfINa Input array A (parameter type encoded)
+     * @param pfINb Input array B (parameter value)
+     * @param pfINc Input array C (unused)
+     */
+    void TdxServer_SetParameter(int DataLen, float* pfOUT, float* pfINa, float* pfINb, float* pfINc);
+
+    /**
+     * @brief TDX API function to get server parameters
+     * @param DataLen Number of data points
+     * @param pfOUT Output array (parameter values)
+     * @param pfINa Input array A (parameter type encoded)
+     * @param pfINb Input array B (unused)
+     * @param pfINc Input array C (unused)
+     */
+    void TdxServer_GetParameter(int DataLen, float* pfOUT, float* pfINa, float* pfINb, float* pfINc);
 }
 
 /**

@@ -1,6 +1,7 @@
 代码:STR2CON(CODE),NODRAW;
 周期:PERIOD+1,NODRAW;
 代码周期:STR2CON(CODE)+ 周期*1000000,NODRAW;
+
 {STEP 1: 设置OHLC数据到DLL}
 DUMMY1:=TDXDLL1(1,O,H,L);  {TDXKBAR_SETOHLC - 设置开高低价格数据}
 DUMMY2:=TDXDLL1(2,C,V,0);  {TDXKBAR_SETCLOSEVOLUME - 设置收盘价和成交量}
@@ -9,17 +10,17 @@ DUMMY2:=TDXDLL1(2,C,V,0);  {TDXKBAR_SETCLOSEVOLUME - 设置收盘价和成交量
 DUMMY3:=TDXDLL1(3,YEAR,MONTH,DAY);     {TDXKBAR_SETDATE - 设置日期}
 DUMMY4:=TDXDLL1(4,HOUR,MINUTE,代码周期);   {TDXKBAR_SETTIMEANDFINALIZE - 设置时间并完成数据准备，使用代码周期作为编码}
 
-{STEP 3: 测试服务器API功能}
+{STEP 3: 测试ZeroMQ服务器API功能 - 基础服务器操作}
 客户端时间:TIME,NODRAW;
-心跳响应:=TDXDLL1(10,客户端时间,0,0);    {TDXSERVER_HEARTBEAT - 服务器心跳测试}
+心跳响应:=TDXDLL1(10,客户端时间,0,0);    {TDXSERVER_HEARTBEAT - ZeroMQ服务器心跳测试}
 
-{获取服务器信息}
+{获取ZeroMQ服务器信息}
 服务器状态:=TDXDLL1(11,0,0,0);         {TDXSERVER_GETINFO - 获取服务器运行状态}
 服务器版本:=TDXDLL1(11,1,0,0);         {TDXSERVER_GETINFO - 获取服务器版本}
 服务器运行时间:=TDXDLL1(11,2,0,0);     {TDXSERVER_GETINFO - 获取服务器运行时间}
 连接数量:=TDXDLL1(11,3,0,0);           {TDXSERVER_GETINFO - 获取连接数量}
 
-{测试连接管理}
+{测试ZeroMQ连接管理}
 客户端ID:代码,NODRAW;
 连接超时:60,NODRAW;
 连接结果:=TDXDLL1(12,客户端ID,连接超时,0);  {TDXSERVER_CONNECT - 模拟客户端连接}
@@ -38,10 +39,108 @@ CPU使用率:=TDXDLL1(15,1,时间窗口,0);     {TDXSERVER_GETSTATS - 获取CPU�
 网络吞吐量:=TDXDLL1(15,2,时间窗口,0);    {TDXSERVER_GETSTATS - 获取网络吞吐量}
 存储使用率:=TDXDLL1(15,3,时间窗口,0);    {TDXSERVER_GETSTATS - 获取存储使用率}
 
-{显示测试结果}
+{STEP 4: 测试ZeroMQ K线数据发送功能}
+K线价格数据:C,NODRAW;
+K线成交量:V,NODRAW;
+股票代码编号:代码,NODRAW;
+
+{发送单个K线数据到QuantServer}
+符号时间戳:TIME,NODRAW;
+OHLC数据1:O*10000+H,NODRAW;             {开盘价*10000+最高价}
+OHLC数据2:L*10000+C,NODRAW;             {最低价*10000+收盘价}
+K线发送结果:=TDXDLL1(16,符号时间戳,OHLC数据1,OHLC数据2);  {TDXSERVER_SENDKBAR - 发送K线数据到QuantServer}
+
+{发送K线序列数据到QuantServer}
+K线序列发送:=TDXDLL1(20,K线价格数据,K线成交量,股票代码编号);  {TDXSERVER_SENDKBARSERIES - 发送K线序列到QuantServer}
+
+{STEP 5: 测试QuantServer技术指标计算功能}
+价格数据:C,NODRAW;
+SMA周期:20,NODRAW;
+RSI周期:14,NODRAW;
+EMA周期:12,NODRAW;
+布林周期:20,NODRAW;
+布林标准差:200,NODRAW;                  {标准差2.0*100}
+
+{使用QuantServer计算各种技术指标}
+SMA指标:=TDXDLL1(17,价格数据,SMA周期,0);      {TDXSERVER_CALCULATESMA - QuantServer简单移动平均}
+RSI指标:=TDXDLL1(18,价格数据,RSI周期,0);      {TDXSERVER_CALCULATERSI - QuantServer相对强弱指标}
+EMA指标:=TDXDLL1(21,价格数据,EMA周期,0);      {TDXSERVER_CALCULATEEMA - QuantServer指数移动平均}
+布林带:=TDXDLL1(19,价格数据,布林周期,布林标准差);  {TDXSERVER_CALCULATEBOLLINGER - QuantServer布林带}
+
+{STEP 6: 测试QuantServer参数管理}
+{设置QuantServer参数}
+服务器超时设置:=TDXDLL1(22,0,30,0);     {设置服务器超时为30秒}
+最大连接设置:=TDXDLL1(22,1,100,0);      {设置最大连接数为100}
+日志级别设置:=TDXDLL1(22,2,2,0);        {设置日志级别为2}
+计算精度设置:=TDXDLL1(22,3,0.001,0);    {设置计算精度}
+
+{获取QuantServer参数}
+当前超时:=TDXDLL1(23,0,0,0);           {获取当前超时设置}
+当前最大连接:=TDXDLL1(23,1,0,0);       {获取当前最大连接数}
+当前日志级别:=TDXDLL1(23,2,0,0);       {获取当前日志级别}
+当前计算精度:=TDXDLL1(23,3,0,0);       {获取当前计算精度}
+
+{STEP 7: ZeroMQ连接状态监控}
+{实时监控ZeroMQ连接}
 心跳延迟:心跳响应-客户端时间,NODRAW;
-服务器正常:IF(服务器状态>0,1,0),NODRAW;
-连接成功:IF(连接结果>0,1,0),NODRAW;
-数据有效:验证结果,NODRAW;
+连接质量:IF(心跳延迟>0 AND 心跳延迟<1,100-心跳延迟*100,0),NODRAW;
+服务器响应:IF(服务器状态>0,1,0),NODRAW;
+
+{STEP 8: QuantServer数据处理能力测试}
+{K线数据处理结果}
+K线发送成功:IF(K线发送结果>0,1,0),NODRAW;
+K线序列成功:IF(K线序列发送>0,1,0),NODRAW;
+数据传输效率:IF(K线发送成功>0 AND K线序列成功>0,100,50),NODRAW;
+
+{技术指标计算结果}
+SMA有效性:IF(SMA指标>0,1,0),NODRAW;
+RSI有效性:IF(RSI指标>=0 AND RSI指标<=100,1,0),NODRAW;
+EMA有效性:IF(EMA指标>0,1,0),NODRAW;
+布林带有效性:IF(布林带>0,1,0),NODRAW;
+指标计算效率:IF(SMA有效性>0 AND RSI有效性>0 AND EMA有效性>0,100,25),NODRAW;
+
+{参数管理结果}
+参数设置成功:IF(服务器超时设置>0 AND 最大连接设置>0,1,0),NODRAW;
+参数获取成功:IF(当前超时>0 AND 当前最大连接>0,1,0),NODRAW;
+参数管理效率:IF(参数设置成功>0 AND 参数获取成功>0,100,0),NODRAW;
+
+{STEP 9: 综合性能指标显示}
+{ZeroMQ连接状态指示器}
+ZMQ连接状态:IF(心跳响应>0 AND 服务器状态>0,连接质量,0),COLOR00FF00,LINETHICK2;
+
+{QuantServer处理能力指示器}
+服务器处理能力:IF(数据传输效率>50 AND 指标计算效率>50,
+    (数据传输效率+指标计算效率)/2,25),COLOR0080FF,LINETHICK2;
+
+{系统整体健康状态}
+系统健康度:IF(ZMQ连接状态>70 AND 服务器处理能力>70 AND 参数管理效率>50,
+    (ZMQ连接状态+服务器处理能力+参数管理效率)/3,0),COLORRED,LINETHICK3;
+
+{STEP 10: 主要技术指标显示}
+{显示QuantServer计算的技术指标}
+SMA20_SERVER:SMA指标,COLORBLUE,LINETHICK1;
+EMA12_SERVER:EMA指标,COLORGREEN,LINETHICK1;
+RSI14_SERVER:RSI指标/100*50+50,COLORYELLOW,LINETHICK1;    {RSI缩放到价格范围显示}
+
+{STEP 11: 服务器性能监控}
+{显示QuantServer性能指标}
+内存使用:内存使用率,NODRAW;
+CPU使用:CPU使用率,NODRAW;
+网络流量:网络吞吐量/1024,NODRAW;       {转换为KB/s}
+
+{性能综合评分}
+性能评分:IF(内存使用<80 AND CPU使用<70,
+    100-内存使用*0.4-CPU使用*0.6,30),COLORMAGENTA,LINETHICK2;
+
+{STEP 12: 实时状态报告}
+{ZeroMQ连接实时状态}
+连接状态报告:IF(ZMQ连接状态>90,100,
+    IF(ZMQ连接状态>70,75,
+        IF(ZMQ连接状态>50,50,25))),COLORWHITE;
+
+{QuantServer服务质量}
+服务质量:IF(服务器处理能力>90 AND 性能评分>80,100,
+    IF(服务器处理能力>70,75,
+        IF(服务器处理能力>50,50,25))),COLORLIGHTBLUE;
 
 OK:1,NODRAW;
