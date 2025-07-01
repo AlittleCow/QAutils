@@ -1,6 +1,7 @@
 #include "TdxPluginMain.h"
 #include "../utils/log.h"
 #include "../module/TdxCommonFunc.h"
+#include "../module/TdxServerFunc.h"
 #include <iostream>
 #include <sstream>
 
@@ -166,7 +167,7 @@ bool TdxPluginManager::Initialize()
         
         // Register built-in functions
         RegisterBuiltInFunctions();
-        
+        RegisterTdxServerFunctions();
         s_initialized = true;
         
         log_debug("TDX Plugin System initialized successfully");

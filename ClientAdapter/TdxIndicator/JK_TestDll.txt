@@ -9,4 +9,39 @@ DUMMY2:=TDXDLL1(2,C,V,0);  {TDXKBAR_SETCLOSEVOLUME - 设置收盘价和成交量
 DUMMY3:=TDXDLL1(3,YEAR,MONTH,DAY);     {TDXKBAR_SETDATE - 设置日期}
 DUMMY4:=TDXDLL1(4,HOUR,MINUTE,代码周期);   {TDXKBAR_SETTIMEANDFINALIZE - 设置时间并完成数据准备，使用代码周期作为编码}
 
+{STEP 3: 测试服务器API功能}
+客户端时间:TIME,NODRAW;
+心跳响应:=TDXDLL1(10,客户端时间,0,0);    {TDXSERVER_HEARTBEAT - 服务器心跳测试}
+
+{获取服务器信息}
+服务器状态:=TDXDLL1(11,0,0,0);         {TDXSERVER_GETINFO - 获取服务器运行状态}
+服务器版本:=TDXDLL1(11,1,0,0);         {TDXSERVER_GETINFO - 获取服务器版本}
+服务器运行时间:=TDXDLL1(11,2,0,0);     {TDXSERVER_GETINFO - 获取服务器运行时间}
+连接数量:=TDXDLL1(11,3,0,0);           {TDXSERVER_GETINFO - 获取连接数量}
+
+{测试连接管理}
+客户端ID:代码,NODRAW;
+连接超时:60,NODRAW;
+连接结果:=TDXDLL1(12,客户端ID,连接超时,0);  {TDXSERVER_CONNECT - 模拟客户端连接}
+断开结果:=TDXDLL1(13,客户端ID,0,0);        {TDXSERVER_DISCONNECT - 模拟客户端断开}
+
+{测试数据验证}
+测试数据:C,NODRAW;
+期望校验:C,NODRAW;                      {简单验证：数据等于自身}
+验证类型:0,NODRAW;                      {验证类型0：简单求和验证}
+验证结果:=TDXDLL1(14,测试数据,期望校验,验证类型);  {TDXSERVER_VALIDATEDATA - 数据完整性验证}
+
+{测试服务器统计}
+时间窗口:3600,NODRAW;                   {1小时时间窗口}
+内存使用率:=TDXDLL1(15,0,时间窗口,0);    {TDXSERVER_GETSTATS - 获取内存使用率}
+CPU使用率:=TDXDLL1(15,1,时间窗口,0);     {TDXSERVER_GETSTATS - 获取CPU使用率}
+网络吞吐量:=TDXDLL1(15,2,时间窗口,0);    {TDXSERVER_GETSTATS - 获取网络吞吐量}
+存储使用率:=TDXDLL1(15,3,时间窗口,0);    {TDXSERVER_GETSTATS - 获取存储使用率}
+
+{显示测试结果}
+心跳延迟:心跳响应-客户端时间,NODRAW;
+服务器正常:IF(服务器状态>0,1,0),NODRAW;
+连接成功:IF(连接结果>0,1,0),NODRAW;
+数据有效:验证结果,NODRAW;
+
 OK:1,NODRAW;

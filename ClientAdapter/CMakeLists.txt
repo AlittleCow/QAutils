@@ -61,6 +61,7 @@ set(HEADERS
     core/TdxFunctionRegistry.h
     core/TdxPluginMain.h
     module/TdxCommonFunc.h
+    module/TdxServerFunc.h
     module/ServerApi.h
     utils/TdxUtilities.h
     utils/log.h
@@ -71,6 +72,7 @@ set(SOURCES
     core/TdxFunctionRegistry.cpp
     core/TdxPluginMain.cpp
     module/TdxCommonFunc.cpp
+    module/TdxServerFunc.cpp
     module/ServerApi.cpp
     utils/TdxUtilities.cpp
     utils/log.cpp
