@@ -172,10 +172,24 @@ bool ServerManager::IsServerConnected() const
  */
 bool ServerManager::ReconnectToServer()
 {
-    if (m_zmqClient && !m_zmqClient->isConnected()) {
-        return m_zmqClient->connect();
+    if (m_zmqClient) {
+        if (!m_zmqClient->isConnected()) {
+            log_debug("Attempting to reconnect to QuantServer...");
+            bool success = m_zmqClient->reconnect();
+            if (success) {
+                log_debug("Successfully reconnected to QuantServer");
+            } else {
+                log_error("Failed to reconnect to QuantServer, will retry later");
+            }
+            return success;
+        } else {
+            log_debug("ZMQ client already connected");
+            return true;
+        }
+    } else {
+        log_error("ZMQ client not initialized, cannot reconnect");
+        return false;
     }
-    return false;
 }
 
 // ============================================================================

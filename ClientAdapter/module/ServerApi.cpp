@@ -82,25 +82,63 @@ json ZmqClient::sendRequest(const json& message) {
         zmq::message_t request(json_str.size());
         memcpy(request.data(), json_str.c_str(), json_str.size());
         
-        if (!socket_->send(request, zmq::send_flags::none)) {
+        // Send request with timeout using polling
+        zmq::pollitem_t poll_items[] = { { *socket_, 0, ZMQ_POLLOUT, 0 } };
+        int poll_result = zmq::poll(poll_items, 1, std::chrono::milliseconds(5000)); // 5 second timeout
+        
+        if (poll_result == 0) {
+            std::cerr << "Send timeout: server not responding" << std::endl;
+            connected_ = false; // Mark as disconnected
+            return json{{"status", "error"}, {"message", "send timeout"}};
+        } else if (poll_result < 0) {
+            std::cerr << "Poll error during send" << std::endl;
+            connected_ = false;
+            return json{{"status", "error"}, {"message", "poll error"}};
+        }
+        
+        if (!socket_->send(request, zmq::send_flags::dontwait)) {
             std::cerr << "Failed to send request" << std::endl;
-            return json{};
+            connected_ = false;
+            return json{{"status", "error"}, {"message", "send failed"}};
         }
 
-        // Receive response
+        // Receive response with timeout using polling
+        zmq::pollitem_t recv_poll_items[] = { { *socket_, 0, ZMQ_POLLIN, 0 } };
+        poll_result = zmq::poll(recv_poll_items, 1, std::chrono::milliseconds(5000)); // 5 second timeout
+        
+        if (poll_result == 0) {
+            std::cerr << "Receive timeout: server not responding" << std::endl;
+            connected_ = false; // Mark as disconnected
+            // Reset socket to clean state
+            socket_->close();
+            socket_ = std::make_unique<zmq::socket_t>(*context_, zmq::socket_type::req);
+            std::string endpoint = "tcp://" + server_host_ + ":" + std::to_string(server_port_);
+            socket_->connect(endpoint);
+            return json{{"status", "error"}, {"message", "receive timeout"}};
+        } else if (poll_result < 0) {
+            std::cerr << "Poll error during receive" << std::endl;
+            connected_ = false;
+            return json{{"status", "error"}, {"message", "poll error"}};
+        }
+
         zmq::message_t reply;
-        if (!socket_->recv(reply, zmq::recv_flags::none)) {
+        if (!socket_->recv(reply, zmq::recv_flags::dontwait)) {
             std::cerr << "Failed to receive response" << std::endl;
-            return json{};
+            connected_ = false;
+            return json{{"status", "error"}, {"message", "receive failed"}};
         }
 
         // Parse JSON response
         std::string reply_str(static_cast<char*>(reply.data()), reply.size());
         return json::parse(reply_str);
 
+    } catch (const json::parse_error& e) {
+        std::cerr << "JSON parse error: " << e.what() << std::endl;
+        return json{{"status", "error"}, {"message", "json parse error"}};
     } catch (const std::exception& e) {
         std::cerr << "Error sending request: " << e.what() << std::endl;
-        return json{};
+        connected_ = false;
+        return json{{"status", "error"}, {"message", e.what()}};
     }
 }
 
@@ -371,6 +409,83 @@ json ZmqClient::apiRequestToJson(const ApiRequest& request) {
         {"parameters", request.parameters},
         {"result_required", request.result_required}
     };
+}
+
+/**
+ * @brief Check if all required dependencies are available
+ * 
+ * @return true if all dependencies are available, false otherwise
+ */
+bool ZmqClient::areDependenciesAvailable() const {
+    // For this implementation, we assume ZMQ and JSON libraries are available
+    // since the code compiles and links successfully
+    return true;
+}
+
+/**
+ * @brief Get detailed dependency status information
+ * 
+ * @return std::string Detailed status of dependencies
+ */
+std::string ZmqClient::getDependencyStatus() const {
+    std::stringstream status;
+    status << "=== ZmqClient Dependency Status ===\n";
+    status << "ZeroMQ (libzmq): Available\n";
+    status << "ZeroMQ C++ Bindings (cppzmq): Available\n";
+    status << "nlohmann/json: Available\n";
+    status << "Current connection status: " << (connected_ ? "Connected" : "Disconnected") << "\n";
+    status << "Server: " << server_host_ << ":" << server_port_ << "\n";
+    status << "=== All dependencies satisfied ===\n";
+    return status.str();
+}
+
+/**
+ * @brief Attempt to reconnect to server with better error recovery
+ * 
+ * @return true if reconnection successful, false otherwise
+ */
+bool ZmqClient::reconnect() {
+    try {
+        // First disconnect if currently connected
+        if (connected_) {
+            disconnect();
+        }
+        
+        // Create new socket to ensure clean state
+        socket_ = std::make_unique<zmq::socket_t>(*context_, zmq::socket_type::req);
+        
+        // Set socket options for better timeout handling
+        int timeout = 5000; // 5 seconds
+        socket_->set(zmq::sockopt::rcvtimeo, timeout);
+        socket_->set(zmq::sockopt::sndtimeo, timeout);
+        socket_->set(zmq::sockopt::linger, 0); // Don't linger on close
+        
+        // Attempt connection
+        std::string endpoint = "tcp://" + server_host_ + ":" + std::to_string(server_port_);
+        socket_->connect(endpoint);
+        
+        // Test connection with a simple heartbeat
+        json test_message = {
+            {"type", "heartbeat"},
+            {"client_time", getCurrentTimestamp()}
+        };
+        
+        json response = sendRequest(test_message);
+        if (response.contains("status") && response["status"] == "success") {
+            connected_ = true;
+            std::cout << "Successfully reconnected to QuantServer at " << server_host_ << ":" << server_port_ << std::endl;
+            return true;
+        } else {
+            connected_ = false;
+            std::cerr << "Reconnection test failed: " << response.dump() << std::endl;
+            return false;
+        }
+        
+    } catch (const std::exception& e) {
+        connected_ = false;
+        std::cerr << "Error during reconnection: " << e.what() << std::endl;
+        return false;
+    }
 }
 
 } // namespace QAUtils

@@ -69,4 +69,5 @@ echo 1. Copy QAUtilsTdxPlugin.dll to your TDX installation directory
 echo 2. Register the plugin in TDX formula manager
 echo 3. Use functions in formulas: DLLNAME@FUNCTION_MARK(parameters)
 echo.
-pause 
+pause
+cd ..

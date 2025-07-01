@@ -190,6 +190,27 @@ public:
      */
     json calculateEMA(const std::vector<double>& price_data, int period);
 
+    /**
+     * @brief Check if all required dependencies are available
+     * 
+     * @return true if all dependencies are available, false otherwise
+     */
+    bool areDependenciesAvailable() const;
+
+    /**
+     * @brief Get detailed dependency status information
+     * 
+     * @return std::string Detailed status of dependencies
+     */
+    std::string getDependencyStatus() const;
+
+    /**
+     * @brief Attempt to reconnect to server with better error recovery
+     * 
+     * @return true if reconnection successful, false otherwise
+     */
+    bool reconnect();
+
 private:
     /**
      * @brief Get current timestamp in ISO format

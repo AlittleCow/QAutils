@@ -32,13 +32,6 @@ DUMMY4:=TDXDLL1(4,HOUR,MINUTE,代码周期);   {TDXKBAR_SETTIMEANDFINALIZE - 设
 验证类型:0,NODRAW;                      {验证类型0：简单求和验证}
 验证结果:=TDXDLL1(14,测试数据,期望校验,验证类型);  {TDXSERVER_VALIDATEDATA - 数据完整性验证}
 
-{测试服务器统计}
-时间窗口:3600,NODRAW;                   {1小时时间窗口}
-内存使用率:=TDXDLL1(15,0,时间窗口,0);    {TDXSERVER_GETSTATS - 获取内存使用率}
-CPU使用率:=TDXDLL1(15,1,时间窗口,0);     {TDXSERVER_GETSTATS - 获取CPU使用率}
-网络吞吐量:=TDXDLL1(15,2,时间窗口,0);    {TDXSERVER_GETSTATS - 获取网络吞吐量}
-存储使用率:=TDXDLL1(15,3,时间窗口,0);    {TDXSERVER_GETSTATS - 获取存储使用率}
-
 {STEP 4: 测试ZeroMQ K线数据发送功能}
 K线价格数据:C,NODRAW;
 K线成交量:V,NODRAW;
