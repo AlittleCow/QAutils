@@ -235,6 +235,13 @@ float EncodeSymbolPeriod(const std::string& symbol, const std::string& period);
 void DecodeSymbolPeriod(float encoded, std::string& symbol, std::string& period);
 
 /**
+ * @brief Convert period code or string to standard period string format  
+ * @param period Period code (as string) or period string to convert
+ * @return Standard period string (e.g., "1min", "5min", "daily", etc.)
+ */
+std::string ConvertPeriodToStr(const std::string& period);
+
+/**
  * @brief Register all TDX common functions with the function registry
  * @return true if all functions were registered successfully
  */

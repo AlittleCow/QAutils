@@ -1,4 +1,5 @@
 #include "TdxServerFunc.h"
+#include "TdxCommonFunc.h"
 #include "../core/TdxFunctionRegistry.h"
 #include "../utils/log.h"
 #include "ServerApi.h"
@@ -436,9 +437,9 @@ TDX_EXPORT(TdxServer_GetStats)
  * @brief TDX API function to send single K-bar data to server
  * @param DataLen Number of data points
  * @param pfOUT Output array (server response)
- * @param pfINa Input array A (encoded symbol and timestamp)
- * @param pfINb Input array B (OHLC data packed: open*10000 + high)
- * @param pfINc Input array C (OHLC data packed: low*10000 + close, volume in high 16 bits)
+ * @param pfINa Input array A (encoded symbol information)
+ * @param pfINb Input array B (requested K-bar index)
+ * @param pfINc Input array C (reserved for future use)
  */
 TDX_EXPORT(TdxServer_SendKBar)
 {
@@ -447,21 +448,66 @@ TDX_EXPORT(TdxServer_SendKBar)
     
     if (client && client->isConnected()) {
         try {
-            // Create simplified K-bar data
-            QAUtils::KBarData kbar;
-            kbar.symbol = "TEST";
-            kbar.timestamp = "2024-01-01T10:00:00Z";
-            kbar.open = 100.0;
-            kbar.high = 102.0;
-            kbar.low = 98.0;
-            kbar.close = 101.0;
-            kbar.volume = 1000;
+            // Decode symbol and period from input parameters
+            std::string symbol, period;
+            int requestedIndex = 0;
             
-            json response = client->testSingleKBar(kbar);
+            if (DataLen > 0 && pfINa && pfINb) {
+                // Try to decode symbol and period from combined encoding in pfINa
+                DecodeSymbolPeriod(pfINa[0], symbol, period);
+                // convert period to period string
+                period = ConvertPeriodToStr(period);
+
+                // Get requested index from pfINb
+                requestedIndex = static_cast<int>(pfINb[0]);
+                
+                // pfINc is reserved for future use
+            }
+            
+            // Use default values if decoding failed
+            if (symbol.empty()) symbol = "999999";
+            if (period.empty()) period = "daily";
+            if (requestedIndex < 0) requestedIndex = 0;
+            
+            // Get K-bar data from KbarManager
+            KbarManager& kbarManager = KbarManager::GetInstance();
+            const std::vector<KbarData>& kbarData = kbarManager.GetKbarData(symbol, period);
+            
+            if (kbarData.empty()) {
+                log_error("No K-bar data available for symbol=%s, period=%s", symbol.c_str(), period.c_str());
+                return;
+            }
+            
+            if (requestedIndex >= static_cast<int>(kbarData.size())) {
+                log_error("Requested index %d out of range for symbol=%s, period=%s (available: %d)", 
+                         requestedIndex, symbol.c_str(), period.c_str(), static_cast<int>(kbarData.size()));
+                return;
+            }
+            
+            // Get the requested K-bar data
+            const KbarData& kbar = kbarData[requestedIndex];
+            
+            // Convert to QAUtils::KBarData format
+            QAUtils::KBarData qaKbar;
+            qaKbar.symbol = symbol;
+            qaKbar.open = kbar.open;
+            qaKbar.high = kbar.high;
+            qaKbar.low = kbar.low;
+            qaKbar.close = kbar.close;
+            qaKbar.volume = kbar.volume;
+            
+            // Format timestamp from date/time components
+            char timestamp[32];
+            snprintf(timestamp, sizeof(timestamp), "%04d-%02d-%02dT%02d:%02d:00Z", 
+                    kbar.year, kbar.month, kbar.day, kbar.hour, kbar.minute);
+            qaKbar.timestamp = timestamp;
+            
+            json response = client->testSingleKBar(qaKbar);
             if (response.contains("status") && response["status"] == "success") {
-                log_debug("KBar sent successfully");
+                log_debug("K-bar sent successfully: symbol=%s, period=%s, index=%d", 
+                         symbol.c_str(), period.c_str(), requestedIndex);
             } else {
-                log_error("KBar send failed: %s", response.dump().c_str());
+                log_error("K-bar send failed: %s", response.dump().c_str());
             }
         } catch (const std::exception& e) {
             log_error("SendKBar exception: %s", e.what());

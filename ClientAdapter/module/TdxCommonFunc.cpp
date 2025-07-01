@@ -252,6 +252,52 @@ void DecodeSymbolPeriod(float encoded, std::string& symbol, std::string& period)
 }
 
 /**
+ * @brief Convert period code or string to standard period string format
+ * @param period Period code (as string) or period string to convert
+ * @return Standard period string (e.g., "1min", "5min", "daily", etc.)
+ */
+std::string ConvertPeriodToStr(const std::string& period)
+{
+    // Try to convert period string to integer code first
+    int periodCode = -1;
+    try {
+        periodCode = std::stoi(period) -1;
+    } catch (const std::exception&) {
+        // If conversion fails, assume it's already a period string
+        // Check if it's already in the correct format
+        if (period == "1min" || period == "5min" || period == "15min" || period == "30min" || 
+            period == "1hour" || period == "daily" || period == "weekly" || period == "monthly" ||
+            period == "yearly") {
+            return period;
+        }
+        // Default fallback
+        return "daily";
+    }
+    
+    // Convert period code to standard period string
+    // Based on TDX period codes: 0-13 representing different time periods
+    switch (periodCode) {
+        case 0: return "1min";      // M1 - 1 minute
+        case 1: return "5min";      // M5 - 5 minutes  
+        case 2: return "15min";     // M15 - 15 minutes
+        case 3: return "30min";     // M30 - 30 minutes
+        case 4: return "1hour";     // H1 - 1 hour
+        case 5: return "daily";     // Day - daily
+        case 6: return "weekly";    // Week - weekly
+        case 7: return "monthly";   // Month - monthly
+        case 8: return "1min";      // M-Min - multi-minute (default to 1min)
+        case 9: return "daily";     // M-Day - multi-day (default to daily)
+        case 10: return "quarterly"; // Season - quarterly
+        case 11: return "yearly";   // Year - yearly
+        case 12: return "5sec";     // Sec5 - 5 seconds
+        case 13: return "1sec";     // M-Sec - multi-second (default to 1sec)
+        default: 
+            log_debug("Unknown period code: %d, defaulting to daily", periodCode);
+            return "daily";
+    }
+}
+
+/**
  * @brief TDX API function to set OHLC data for Kbar
  * @param DataLen Number of data points
  * @param pfOUT Output array (not used in this function)
