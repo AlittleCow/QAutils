@@ -8,6 +8,10 @@ TDengine or SQLite for K-bar data storage.
 
 import pandas as pd
 from datetime import datetime, timedelta
+# Add the parent directory to the path to find kbar_db_sqlite module
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from db import (
     create_database_manager, 
     DEFAULT_KBAR_CONFIG_TDENGINE, 

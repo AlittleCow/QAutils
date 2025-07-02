@@ -7,7 +7,13 @@ for storing and retrieving stock data.
 
 import logging
 import pandas as pd
+import sys
+import os
 from datetime import datetime, timedelta
+
+# Add the parent directory to the path to find kbar_db_sqlite module
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from kbar_db_sqlite import KbarDatabase
 
 # Configure logging
