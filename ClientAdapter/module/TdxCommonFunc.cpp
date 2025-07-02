@@ -286,14 +286,38 @@ float EncodeSymbolPeriod(const std::string& symbol, const std::string& period)
 /**
  * @brief Decode symbol and period from encoded float value
  * @param encoded Encoded float value containing symbol and period information
- * @param symbol Output symbol integer
+ * @param symbol Output symbol string (6-digit format)
  * @param period Output period integer
  */
-void DecodeSymbolPeriod(float encoded, int& symbol, int& period)
+void DecodeSymbolPeriod(float encoded, std::string& symbol, int& period)
 {
     int encodedInt = static_cast<int>(encoded);
     period = encodedInt / 1000000;
-    symbol = encodedInt % 1000000;
+    int symbolInt = encodedInt % 1000000;
+    // Use symbolIntFixture to ensure 6-digit format
+    symbol = symbolIntFixture(symbolInt);
+    
+    log_debug("DecodeSymbolPeriod: encoded=%f, encodedInt=%d, symbolInt=%d, symbol=%s, period=%d", 
+             encoded, encodedInt, symbolInt, symbol.c_str(), period);
+}
+
+/**
+ * @brief Fix symbol format to ensure it's 6 digits for Chinese stocks
+ * @param symbolInt Integer symbol value (e.g., 2120)
+ * @return Fixed symbol string with proper padding (e.g., "002120")
+ */
+std::string symbolIntFixture(int symbolInt)
+{
+    // Convert to string and pad with leading zeros to make it 6 digits
+    std::string symbolStr = std::to_string(symbolInt);
+    
+    // Pad with leading zeros to make it 6 digits
+    while (symbolStr.length() < 6) {
+        symbolStr = "0" + symbolStr;
+    }
+    
+    log_debug("symbolIntFixture: input=%d, output=%s", symbolInt, symbolStr.c_str());
+    return symbolStr;
 }
 
 /**
@@ -453,9 +477,8 @@ TDX_EXPORT(TdxKbar_SetTimeAndFinalize)
     // Extract symbol and period from encoded value (use first element)
     if (DataLen > 0)
     {
-        int symbolInt = 0, periodInt = 0;
-        DecodeSymbolPeriod(pfINc[0], symbolInt, periodInt);
-        current_symbol = std::to_string(symbolInt);
+        int periodInt = 0;
+        DecodeSymbolPeriod(pfINc[0], current_symbol, periodInt);
         current_period = std::to_string(periodInt);
         log_debug("TdxKbar_SetTimeAndFinalize: Decoded symbol=%s, period=%s from encoded value=%f", 
                  current_symbol.c_str(), current_period.c_str(), pfINc[0]);
@@ -532,9 +555,9 @@ TDX_EXPORT(TdxKbar_GetOHLC)
 {
     if (DataLen <= 0) return;
     
-    int symbolInt = 0, periodInt = 0;
-    DecodeSymbolPeriod(pfINa[0], symbolInt, periodInt);
-    std::string symbol = std::to_string(symbolInt);
+    std::string symbol;
+    int periodInt = 0;
+    DecodeSymbolPeriod(pfINa[0], symbol, periodInt);
     std::string period = std::to_string(periodInt);
     
     int dataType = static_cast<int>(pfINb[0]); // 0=Open, 1=High, 2=Low, 3=Close
@@ -576,9 +599,9 @@ TDX_EXPORT(TdxKbar_GetVolume)
 {
     if (DataLen <= 0) return;
     
-    int symbolInt = 0, periodInt = 0;
-    DecodeSymbolPeriod(pfINa[0], symbolInt, periodInt);
-    std::string symbol = std::to_string(symbolInt);
+    std::string symbol;
+    int periodInt = 0;
+    DecodeSymbolPeriod(pfINa[0], symbol, periodInt);
     std::string period = std::to_string(periodInt);
     
     int indexOffset = static_cast<int>(pfINc[0]);

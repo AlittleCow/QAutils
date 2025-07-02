@@ -449,7 +449,6 @@ TDX_EXPORT(TdxServer_SendKBar)
     if (client && client->isConnected()) {
         try {
             // Decode symbol and period from input parameters
-            int symbolInt, periodInt;
             std::string symbol, period;
             int requestedIndex = 0;
             
@@ -458,14 +457,14 @@ TDX_EXPORT(TdxServer_SendKBar)
             
             if (DataLen > 0 && pfINa && pfINb) {
                 // Try to decode symbol and period from combined encoding in pfINa
-                DecodeSymbolPeriod(pfINa[0], symbolInt, periodInt);
+                int periodInt = 0;
+                DecodeSymbolPeriod(pfINa[0], symbol, periodInt);
                 
-                // Convert integers to strings for further processing
-                symbol = std::to_string(symbolInt);
+                // Convert period integer to string for further processing
                 period = std::to_string(periodInt);
                 
                 log_debug("TdxServer_SendKBar: After DecodeSymbolPeriod - symbol=%s, period=%s", symbol.c_str(), period.c_str());
-                
+
                 // Store original numeric period for data lookup
                 std::string originalPeriod = period;
                 
@@ -603,20 +602,19 @@ TDX_EXPORT(TdxServer_SendKBarSeries)
     if (client && client->isConnected()) {
         try {
             // Decode symbol and period from input parameters
-            int symbolInt = 0, periodInt = 0;
             std::string symbol, period;
             int startIndex = 0;
             int kbarLength = 0;
-            
+            int periodInt = 0;
+
             log_debug("TdxServer_SendKBarSeries: Input parameters - DataLen=%d, pfINa[0]=%f, pfINb[0]=%f, pfINc[0]=%f", 
                      DataLen, DataLen > 0 ? pfINa[0] : 0.0f, DataLen > 0 ? pfINb[0] : 0.0f, DataLen > 0 ? pfINc[0] : 0.0f);
             
             if (DataLen > 0 && pfINa && pfINb && pfINc) {
                 // Try to decode symbol and period from combined encoding in pfINa
-                DecodeSymbolPeriod(pfINa[0], symbolInt, periodInt);
+                DecodeSymbolPeriod(pfINa[0], symbol, periodInt);
                 
-                // Convert integers to strings for further processing
-                symbol = std::to_string(symbolInt);
+                // Convert period integer to string for further processing
                 period = std::to_string(periodInt);
                 
                 // Store original numeric period for data lookup

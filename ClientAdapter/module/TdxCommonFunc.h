@@ -232,17 +232,24 @@ TDX_EXPORT(TdxKbar_GetVolume);
 float EncodeSymbolPeriod(const std::string& symbol, const std::string& period);
 
 /**
- * @brief Helper function to decode symbol and period from float
- * @param encoded Encoded float value
- * @param symbol Output symbol integer
- * @param period Output period integer
+ * @brief Decode symbol and period from encoded float value
+ * @param encoded Encoded float value containing symbol and period
+ * @param symbol Output parameter for decoded symbol string (6-digit format)
+ * @param period Output parameter for decoded period integer
  */
-void DecodeSymbolPeriod(float encoded, int& symbol, int& period);
+void DecodeSymbolPeriod(float encoded, std::string& symbol, int& period);
 
 /**
- * @brief Convert period code or string to standard period string format  
- * @param period Period code (as string) or period string to convert
- * @return Standard period string (e.g., "1min", "5min", "daily", etc.)
+ * @brief Fix symbol format to ensure it's 6 digits for Chinese stocks
+ * @param symbolInt Integer symbol value (e.g., 2120)
+ * @return Fixed symbol string with proper padding (e.g., "002120")
+ */
+std::string symbolIntFixture(int symbolInt);
+
+/**
+ * @brief Convert period integer to readable string format
+ * @param period Period string to convert
+ * @return Converted period string
  */
 std::string ConvertPeriodToStr(const std::string& period);
 
