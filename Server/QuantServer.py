@@ -217,7 +217,10 @@ class QuantServer:
         try:
             series_data = message.get('data', [])
             symbol = message.get('symbol', '')
-            
+            period = message.get('period', 0)  # Parse period from message
+            # debug print
+            print(f"Received kbar series: symbol={symbol}, period={period}")
+
             processed_series = []
             for kbar in series_data:
                 processed_kbar = {
@@ -228,19 +231,23 @@ class QuantServer:
                     'close': kbar.get('close', 0),
                     'volume': kbar.get('volume', 0)
                 }
-                # debug print
-                # print(f"Processed kbar: timestamp={processed_kbar['timestamp']}, "
-                #       f"open={processed_kbar['open']:.2f}, "
-                #       f"high={processed_kbar['high']:.2f}, "
-                #       f"low={processed_kbar['low']:.2f}, "
-                #       f"close={processed_kbar['close']:.2f}, "
-                #       f"volume={processed_kbar['volume']}")
                 processed_series.append(processed_kbar)
             
+            # debug print - only print the last kbar
+            if processed_series:
+                last_kbar = processed_series[-1]
+                print(f"Processed last kbar: timestamp={last_kbar['timestamp']}, "
+                      f"open={last_kbar['open']:.2f}, "
+                      f"high={last_kbar['high']:.2f}, "
+                      f"low={last_kbar['low']:.2f}, "
+                      f"close={last_kbar['close']:.2f}, "
+                      f"volume={last_kbar['volume']}")
+
             return {
                 'status': 'success',
                 'type': 'kbar_series_response',
                 'symbol': symbol,
+                'period': period,  # Include period in response
                 'data': processed_series,
                 'count': len(processed_series),
                 'timestamp': datetime.now().isoformat()

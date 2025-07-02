@@ -234,10 +234,10 @@ float EncodeSymbolPeriod(const std::string& symbol, const std::string& period);
 /**
  * @brief Helper function to decode symbol and period from float
  * @param encoded Encoded float value
- * @param symbol Output symbol string
- * @param period Output period string
+ * @param symbol Output symbol integer
+ * @param period Output period integer
  */
-void DecodeSymbolPeriod(float encoded, std::string& symbol, std::string& period);
+void DecodeSymbolPeriod(float encoded, int& symbol, int& period);
 
 /**
  * @brief Convert period code or string to standard period string format  

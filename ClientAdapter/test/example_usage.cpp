@@ -47,7 +47,7 @@ void demonstrateZmqClient() {
             {"AAPL", "2024-01-15T10:30:00", 150.25, 151.80, 149.90, 151.50, 1000000},
             {"AAPL", "2024-01-15T11:00:00", 151.50, 152.20, 151.00, 151.75, 750000}
         };
-        auto series_response = client.testKBarSeries("AAPL", kbar_series);
+        auto series_response = client.SendKBarSeries("AAPL", 1, kbar_series);
         std::cout << "K-bar series response: " << series_response.dump(2) << std::endl;
 
         // Test API calls (indicators)

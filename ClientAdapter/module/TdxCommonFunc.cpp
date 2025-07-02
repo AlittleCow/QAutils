@@ -286,23 +286,14 @@ float EncodeSymbolPeriod(const std::string& symbol, const std::string& period)
 /**
  * @brief Decode symbol and period from encoded float value
  * @param encoded Encoded float value containing symbol and period information
- * @param symbol Output symbol string
- * @param period Output period string
+ * @param symbol Output symbol integer
+ * @param period Output period integer
  */
-void DecodeSymbolPeriod(float encoded, std::string& symbol, std::string& period)
+void DecodeSymbolPeriod(float encoded, int& symbol, int& period)
 {
-    // The encoded value format is: Symbol + Period*1000000
-    // TDX Period function results from 0 to 13, representing 1/5/15/30/60 minutes, daily/weekly/monthly, multi-minute, multi-day/quarterly/yearly, 5-second/multi-second lines, 13+ for custom periods
-    // Example: 600001.SH 1min -> 600001 + 1*1000000 = 1600001
     int encodedInt = static_cast<int>(encoded);
-    int periodCode = encodedInt / 1000000;
-    int symbolCode = encodedInt % 1000000;
-    
-    period = std::to_string(periodCode);
-    symbol = std::to_string(symbolCode);
-
-    log_debug("DecodeSymbolPeriod: encoded=%f, encodedInt=%d, periodCode=%d, symbolCode=%d -> symbol='%s', period='%s'", 
-             encoded, encodedInt, periodCode, symbolCode, symbol.c_str(), period.c_str());
+    period = encodedInt / 1000000;
+    symbol = encodedInt % 1000000;
 }
 
 /**
@@ -462,7 +453,10 @@ TDX_EXPORT(TdxKbar_SetTimeAndFinalize)
     // Extract symbol and period from encoded value (use first element)
     if (DataLen > 0)
     {
-        DecodeSymbolPeriod(pfINc[0], current_symbol, current_period);
+        int symbolInt = 0, periodInt = 0;
+        DecodeSymbolPeriod(pfINc[0], symbolInt, periodInt);
+        current_symbol = std::to_string(symbolInt);
+        current_period = std::to_string(periodInt);
         log_debug("TdxKbar_SetTimeAndFinalize: Decoded symbol=%s, period=%s from encoded value=%f", 
                  current_symbol.c_str(), current_period.c_str(), pfINc[0]);
     }
@@ -538,8 +532,10 @@ TDX_EXPORT(TdxKbar_GetOHLC)
 {
     if (DataLen <= 0) return;
     
-    std::string symbol, period;
-    DecodeSymbolPeriod(pfINa[0], symbol, period);
+    int symbolInt = 0, periodInt = 0;
+    DecodeSymbolPeriod(pfINa[0], symbolInt, periodInt);
+    std::string symbol = std::to_string(symbolInt);
+    std::string period = std::to_string(periodInt);
     
     int dataType = static_cast<int>(pfINb[0]); // 0=Open, 1=High, 2=Low, 3=Close
     int indexOffset = static_cast<int>(pfINc[0]);
@@ -580,8 +576,10 @@ TDX_EXPORT(TdxKbar_GetVolume)
 {
     if (DataLen <= 0) return;
     
-    std::string symbol, period;
-    DecodeSymbolPeriod(pfINa[0], symbol, period);
+    int symbolInt = 0, periodInt = 0;
+    DecodeSymbolPeriod(pfINa[0], symbolInt, periodInt);
+    std::string symbol = std::to_string(symbolInt);
+    std::string period = std::to_string(periodInt);
     
     int indexOffset = static_cast<int>(pfINc[0]);
     

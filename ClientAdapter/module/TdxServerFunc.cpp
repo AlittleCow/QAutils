@@ -449,6 +449,7 @@ TDX_EXPORT(TdxServer_SendKBar)
     if (client && client->isConnected()) {
         try {
             // Decode symbol and period from input parameters
+            int symbolInt, periodInt;
             std::string symbol, period;
             int requestedIndex = 0;
             
@@ -457,7 +458,12 @@ TDX_EXPORT(TdxServer_SendKBar)
             
             if (DataLen > 0 && pfINa && pfINb) {
                 // Try to decode symbol and period from combined encoding in pfINa
-                DecodeSymbolPeriod(pfINa[0], symbol, period);
+                DecodeSymbolPeriod(pfINa[0], symbolInt, periodInt);
+                
+                // Convert integers to strings for further processing
+                symbol = std::to_string(symbolInt);
+                period = std::to_string(periodInt);
+                
                 log_debug("TdxServer_SendKBar: After DecodeSymbolPeriod - symbol=%s, period=%s", symbol.c_str(), period.c_str());
                 
                 // Store original numeric period for data lookup
@@ -597,6 +603,7 @@ TDX_EXPORT(TdxServer_SendKBarSeries)
     if (client && client->isConnected()) {
         try {
             // Decode symbol and period from input parameters
+            int symbolInt = 0, periodInt = 0;
             std::string symbol, period;
             int startIndex = 0;
             int kbarLength = 0;
@@ -606,8 +613,11 @@ TDX_EXPORT(TdxServer_SendKBarSeries)
             
             if (DataLen > 0 && pfINa && pfINb && pfINc) {
                 // Try to decode symbol and period from combined encoding in pfINa
-                DecodeSymbolPeriod(pfINa[0], symbol, period);
-                log_debug("TdxServer_SendKBarSeries: After DecodeSymbolPeriod - symbol=%s, period=%s", symbol.c_str(), period.c_str());
+                DecodeSymbolPeriod(pfINa[0], symbolInt, periodInt);
+                
+                // Convert integers to strings for further processing
+                symbol = std::to_string(symbolInt);
+                period = std::to_string(periodInt);
                 
                 // Store original numeric period for data lookup
                 std::string originalPeriod = period;
@@ -629,19 +639,15 @@ TDX_EXPORT(TdxServer_SendKBarSeries)
             
             // Use default values if decoding failed
             if (symbol.empty()) {
-                log_debug("TdxServer_SendKBarSeries: Symbol is empty, using default '999999'");
                 symbol = "999999";
             }
             if (period.empty()) {
-                log_debug("TdxServer_SendKBarSeries: Period is empty, using default 'daily'");
                 period = "daily";
             }
             if (startIndex < 0) {
-                log_debug("TdxServer_SendKBarSeries: StartIndex is negative (%d), using default 0", startIndex);
                 startIndex = 0;
             }
             if (kbarLength <= 0) {
-                log_debug("TdxServer_SendKBarSeries: KbarLength is invalid (%d), using default 100", kbarLength);
                 kbarLength = 100; // Default length if not specified or invalid
             }
             
@@ -654,7 +660,6 @@ TDX_EXPORT(TdxServer_SendKBarSeries)
             
             if (kbarData.empty()) {
                 log_error("TdxServer_SendKBarSeries: No K-bar data available for symbol=%s, period=%s. Check if data was loaded via TdxKbar_SetTimeAndFinalize sequence.", symbol.c_str(), period.c_str());
-                
                 // Debug: Show all available data
                 kbarManager.DebugLogAllData();
                 return;
@@ -700,7 +705,7 @@ TDX_EXPORT(TdxServer_SendKBarSeries)
             log_debug("TdxServer_SendKBarSeries: Prepared %d K-bars (requested=%d) starting from index %d", 
                      static_cast<int>(kbarSeries.size()), kbarLength, startIndex);
             
-            json response = client->testKBarSeries(symbol, kbarSeries);
+            json response = client->SendKBarSeries(symbol, periodInt, kbarSeries);
             if (response.contains("status") && response["status"] == "success") {
                 log_debug("K-bar series sent successfully: symbol=%s, period=%s, count=%d, startIndex=%d, requestedLength=%d", 
                          symbol.c_str(), period.c_str(), static_cast<int>(kbarSeries.size()), startIndex, kbarLength);

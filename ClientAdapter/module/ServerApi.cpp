@@ -431,9 +431,10 @@ json ZmqClient::testSingleKBar(const KBarData& kbar_data) {
  * 
  * @param symbol The symbol for the K-bar series
  * @param kbar_series Vector of K-bar data
+ * @param period The period/timeframe for the K-bar series
  * @return json Server response
  */
-json ZmqClient::testKBarSeries(const std::string& symbol, const std::vector<KBarData>& kbar_series) {
+json ZmqClient::SendKBarSeries(const std::string& symbol, const int period, const std::vector<KBarData>& kbar_series) {
     // Validate connection health before sending data series
     if (!connected_ || !validateConnectionHealth()) {
         log_error("Connection not healthy for K-bar series send");
@@ -457,6 +458,7 @@ json ZmqClient::testKBarSeries(const std::string& symbol, const std::vector<KBar
     json message = {
         {"type", "kbar_series"},
         {"symbol", symbol},
+        {"period", period},
         {"data", data_array}
     };
     return sendRequest(message);

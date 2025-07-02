@@ -141,9 +141,10 @@ public:
      * 
      * @param symbol The symbol for the K-bar series
      * @param kbar_series Vector of K-bar data
+     * @param period The period/timeframe for the K-bar series
      * @return json Server response
      */
-    json testKBarSeries(const std::string& symbol, const std::vector<KBarData>& kbar_series);
+    json SendKBarSeries(const std::string& symbol, const int period, const std::vector<KBarData>& kbar_series);
 
     /**
      * @brief Test API calls for indicators
