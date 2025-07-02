@@ -85,11 +85,33 @@ public:
     bool isConnected() const;
 
     /**
+     * @brief Validate connection health by checking socket state
+     * 
+     * @return true if connection is healthy, false otherwise
+     */
+    bool validateConnectionHealth();
+
+    /**
+     * @brief Emergency disconnect with immediate socket cleanup
+     */
+    void emergencyDisconnect();
+
+    /**
      * @brief Test if server is available and responding
      * 
      * @return true if server is reachable and responding, false otherwise
      */
     bool testServerAvailability();
+
+    /**
+     * @brief Check server status and availability for TDX client
+     * 
+     * This method can be called by TDX to proactively check if the server
+     * is still available before performing operations
+     * 
+     * @return json Status information including availability and connection health
+     */
+    json checkServerStatus();
 
     /**
      * @brief Send a JSON request and receive response

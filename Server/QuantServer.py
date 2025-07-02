@@ -229,12 +229,12 @@ class QuantServer:
                     'volume': kbar.get('volume', 0)
                 }
                 # debug print
-                print(f"Processed kbar: timestamp={processed_kbar['timestamp']}, "
-                      f"open={processed_kbar['open']:.2f}, "
-                      f"high={processed_kbar['high']:.2f}, "
-                      f"low={processed_kbar['low']:.2f}, "
-                      f"close={processed_kbar['close']:.2f}, "
-                      f"volume={processed_kbar['volume']}")
+                # print(f"Processed kbar: timestamp={processed_kbar['timestamp']}, "
+                #       f"open={processed_kbar['open']:.2f}, "
+                #       f"high={processed_kbar['high']:.2f}, "
+                #       f"low={processed_kbar['low']:.2f}, "
+                #       f"close={processed_kbar['close']:.2f}, "
+                #       f"volume={processed_kbar['volume']}")
                 processed_series.append(processed_kbar)
             
             return {

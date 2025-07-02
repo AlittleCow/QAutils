@@ -12,13 +12,13 @@
         },
         "sqlite": {
             "enabled": true,
-            "database_path": "data/stock_kbar.db",
+            "database_path": "tdx_db/stock_kbar.db",
             "create_dir": true
         }
     },
     "meta_config": {
         "enabled": true,
-        "database_path": "data/stock_meta.db",
+        "database_path": "tdx_db/stock_meta.db",
         "timeout": 30.0,
         "check_same_thread": false
     }
