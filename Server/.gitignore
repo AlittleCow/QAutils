@@ -138,8 +138,6 @@ dmypy.json
 
 # K-bar database specific
 data/
-kbar_data.db
-kbar_performance_test.db
 *.db-*
 
 # Log files

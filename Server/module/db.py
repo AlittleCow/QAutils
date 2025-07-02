@@ -1,8 +1,8 @@
 """
 Generic Database Wrapper for QAutils
 
-This module provides a unified interface for accessing both TDengine (kbar data)
-and SQLite (meta data) databases. It manages connections and provides high-level
+This module provides a unified interface for accessing both TDengine/SQLite (kbar data)
+and SQLite (for meta data) databases. It manages connections and provides high-level
 operations for stock data storage and retrieval.
 """
 
@@ -13,12 +13,21 @@ import pandas as pd
 
 # Make TDengine import optional
 try:
-    from kbar_db import KbarDatabase
+    from kbar_db import KbarDatabase as TDengineKbarDatabase
     TDENGINE_AVAILABLE = True
 except ImportError as e:
     logging.warning(f"TDengine not available: {e}")
-    KbarDatabase = None
+    TDengineKbarDatabase = None
     TDENGINE_AVAILABLE = False
+
+# Import SQLite K-bar database
+try:
+    from kbar_db_sqlite import KbarDatabase as SQLiteKbarDatabase
+    SQLITE_KBAR_AVAILABLE = True
+except ImportError as e:
+    logging.warning(f"SQLite K-bar database not available: {e}")
+    SQLiteKbarDatabase = None
+    SQLITE_KBAR_AVAILABLE = False
 
 from meta_db import MetaDatabase
 
@@ -27,7 +36,7 @@ class DatabaseManager:
     """
     Unified database manager for both time-series K-bar data and relational meta data.
     
-    This class provides a single interface to manage both TDengine (for K-bar data)
+    This class provides a single interface to manage both TDengine/SQLite (for K-bar data)
     and SQLite (for meta data) databases.
     """
     
@@ -37,7 +46,8 @@ class DatabaseManager:
         
         Args:
             config: Configuration dictionary containing:
-                - kbar_config: TDengine configuration for K-bar data
+                - kbar_config: K-bar database configuration
+                - kbar_type: Type of K-bar database ('tdengine' or 'sqlite', default: 'sqlite')
                 - meta_config: SQLite configuration for meta data
         """
         self.config = config
@@ -53,21 +63,19 @@ class DatabaseManager:
     def _connect_databases(self):
         """Connect to both databases."""
         try:
-            # Connect to TDengine for K-bar data
+            # Connect to K-bar database (TDengine or SQLite)
             kbar_config = self.config.get('kbar_config', {})
-            if kbar_config and TDENGINE_AVAILABLE and KbarDatabase:
-                try:
-                    self.kbar_db = KbarDatabase(kbar_config)
-                    self.logger.info("Connected to TDengine for K-bar data")
-                except Exception as e:
-                    self.logger.warning(f"Failed to connect to TDengine: {e}")
-                    self.logger.warning("Continuing without TDengine (K-bar data will not be available)")
-                    self.kbar_db = None
-            else:
-                if not TDENGINE_AVAILABLE:
-                    self.logger.warning("TDengine client not available")
+            kbar_type = self.config.get('kbar_type', 'sqlite').lower()
+            
+            if kbar_config:
+                if kbar_type == 'tdengine':
+                    self._connect_tdengine_kbar(kbar_config)
+                elif kbar_type == 'sqlite':
+                    self._connect_sqlite_kbar(kbar_config)
                 else:
-                    self.logger.warning("No TDengine configuration provided")
+                    self.logger.warning(f"Unknown K-bar database type: {kbar_type}. Supported types: 'tdengine', 'sqlite'")
+            else:
+                self.logger.warning("No K-bar database configuration provided")
                 
             # Connect to SQLite for meta data
             meta_config = self.config.get('meta_config', {})
@@ -80,6 +88,35 @@ class DatabaseManager:
         except Exception as e:
             self.logger.error(f"Failed to connect to databases: {str(e)}")
             raise
+            
+    def _connect_tdengine_kbar(self, kbar_config: Dict[str, Any]):
+        """Connect to TDengine for K-bar data."""
+        if TDENGINE_AVAILABLE and TDengineKbarDatabase:
+            try:
+                self.kbar_db = TDengineKbarDatabase(kbar_config)
+                self.logger.info("Connected to TDengine for K-bar data")
+            except Exception as e:
+                self.logger.warning(f"Failed to connect to TDengine: {e}")
+                self.logger.warning("Continuing without TDengine (K-bar data will not be available)")
+                self.kbar_db = None
+        else:
+            if not TDENGINE_AVAILABLE:
+                self.logger.warning("TDengine client not available")
+            else:
+                self.logger.warning("TDengine KbarDatabase class not available")
+                
+    def _connect_sqlite_kbar(self, kbar_config: Dict[str, Any]):
+        """Connect to SQLite for K-bar data."""
+        if SQLITE_KBAR_AVAILABLE and SQLiteKbarDatabase:
+            try:
+                self.kbar_db = SQLiteKbarDatabase(kbar_config)
+                self.logger.info("Connected to SQLite for K-bar data")
+            except Exception as e:
+                self.logger.warning(f"Failed to connect to SQLite K-bar database: {e}")
+                self.logger.warning("Continuing without SQLite K-bar database (K-bar data will not be available)")
+                self.kbar_db = None
+        else:
+            self.logger.warning("SQLite K-bar database not available")
             
     def setup_stock(self, symbol: str, exchange: str, name: str, **kwargs) -> int:
         """
@@ -337,33 +374,44 @@ class DatabaseManager:
 
 # Factory function for easier instantiation
 def create_database_manager(kbar_config: Optional[Dict[str, Any]] = None, 
-                          meta_config: Optional[Dict[str, Any]] = None) -> DatabaseManager:
+                          meta_config: Optional[Dict[str, Any]] = None,
+                          kbar_type: str = 'sqlite') -> DatabaseManager:
     """
     Factory function to create a DatabaseManager instance.
     
     Args:
-        kbar_config: TDengine configuration for K-bar data
+        kbar_config: K-bar database configuration (TDengine or SQLite)
         meta_config: SQLite configuration for meta data
+        kbar_type: Type of K-bar database ('tdengine' or 'sqlite', default: 'sqlite')
         
     Returns:
         DatabaseManager instance
     """
     config = {
         'kbar_config': kbar_config or {},
-        'meta_config': meta_config or {}
+        'meta_config': meta_config or {},
+        'kbar_type': kbar_type
     }
     
     return DatabaseManager(config)
 
 
 # Default configuration templates
-DEFAULT_KBAR_CONFIG = {
+DEFAULT_KBAR_CONFIG_TDENGINE = {
     'host': 'localhost',
     'port': 6030,
     'user': 'root',
     'password': 'taosdata',
     'database': 'stock_kbar'
 }
+
+DEFAULT_KBAR_CONFIG_SQLITE = {
+    'database_path': 'data/stock_kbar.db',
+    'create_dir': True
+}
+
+# Backward compatibility - keep the old name
+DEFAULT_KBAR_CONFIG = DEFAULT_KBAR_CONFIG_TDENGINE
 
 DEFAULT_META_CONFIG = {
     'database_path': 'data/stock_meta.db',
