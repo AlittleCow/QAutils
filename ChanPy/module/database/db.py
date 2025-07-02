@@ -31,6 +31,15 @@ except ImportError as e:
     SQLiteKbarDatabase = None
     SQLITE_KBAR_AVAILABLE = False
 
+# Import Chan database
+try:
+    from .chan_db_sqlite import ChanDatabase
+    CHAN_DB_AVAILABLE = True
+except ImportError as e:
+    logging.warning(f"Chan database not available: {e}")
+    ChanDatabase = None
+    CHAN_DB_AVAILABLE = False
+
 from .meta_db import MetaDatabase
 
 
@@ -51,6 +60,7 @@ class DatabaseManager:
                 - kbar_config: K-bar database configuration
                 - kbar_type: Type of K-bar database ('tdengine' or 'sqlite', default: 'sqlite')
                 - meta_config: SQLite configuration for meta data
+                - chan_config: SQLite configuration for Chan data
         """
         self.config = config
         self.logger = logging.getLogger(__name__)
@@ -58,6 +68,7 @@ class DatabaseManager:
         # Initialize databases
         self.kbar_db = None
         self.meta_db = None
+        self.chan_db = None
         
         # Connect to databases
         self._connect_databases()
@@ -95,6 +106,26 @@ class DatabaseManager:
                 self.logger.info("Meta database is disabled in configuration")
             else:
                 self.logger.warning("No SQLite configuration provided")
+            
+            # Connect to Chan database
+            chan_config = self.config.get('chan_config', {})
+            chan_enabled = chan_config.get('enabled', True)
+            
+            if chan_config and chan_enabled:
+                if CHAN_DB_AVAILABLE and ChanDatabase:
+                    try:
+                        self.chan_db = ChanDatabase(chan_config)
+                        self.logger.info("Connected to Chan database")
+                    except Exception as e:
+                        self.logger.warning(f"Failed to connect to Chan database: {e}")
+                        self.logger.warning("Continuing without Chan database (Chan line data will not be available)")
+                        self.chan_db = None
+                else:
+                    self.logger.warning("Chan database not available")
+            elif not chan_enabled:
+                self.logger.info("Chan database is disabled in configuration")
+            else:
+                self.logger.warning("No Chan database configuration provided")
                 
         except Exception as e:
             self.logger.error(f"Failed to connect to databases: {str(e)}")
@@ -344,8 +375,10 @@ class DatabaseManager:
         stats = {
             'kbar_db_available': self.kbar_db is not None,
             'meta_db_available': self.meta_db is not None,
+            'chan_db_available': self.chan_db is not None,
             'total_stocks': 0,
             'total_symbols_with_data': 0,
+            'total_symbols_with_chan_lines': 0,
             'exchanges': []
         }
         
@@ -369,9 +402,123 @@ class DatabaseManager:
                 
             except Exception as e:
                 self.logger.error(f"Failed to get K-bar database stats: {str(e)}")
+        
+        if self.chan_db:
+            try:
+                chan_symbols = self.chan_db.get_symbols_with_lines()
+                stats['total_symbols_with_chan_lines'] = len(set(
+                    f"{s['symbol']}.{s['exchange']}" for s in chan_symbols
+                ))
+                
+            except Exception as e:
+                self.logger.error(f"Failed to get Chan database stats: {str(e)}")
                 
         return stats
         
+    def store_chan_lines(self, lines: List, symbol: str, exchange: str, 
+                        period: str, clear_existing: bool = True) -> List[int]:
+        """
+        Store Chan lines in the database.
+        
+        Args:
+            lines: List of ChanLine objects to store
+            symbol: Stock symbol
+            exchange: Exchange code
+            period: Time period
+            clear_existing: Whether to clear existing lines first
+            
+        Returns:
+            List of database IDs for stored lines
+        """
+        if not self.chan_db:
+            raise RuntimeError("Chan database not available")
+            
+        try:
+            return self.chan_db.store_chan_lines(lines, symbol, exchange, period, clear_existing)
+        except Exception as e:
+            self.logger.error(f"Failed to store Chan lines: {str(e)}")
+            raise
+    
+    def get_chan_lines(self, symbol: str, exchange: str, period: str,
+                      start_time: Optional[str] = None, end_time: Optional[str] = None,
+                      status: Optional[Any] = None, direction: Optional[Any] = None,
+                      is_global: Optional[bool] = None, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+        """
+        Retrieve Chan lines from database.
+        
+        Args:
+            symbol: Stock symbol
+            exchange: Exchange code
+            period: Time period
+            start_time: Filter by start time (inclusive)
+            end_time: Filter by end time (inclusive)
+            status: Filter by line status
+            direction: Filter by line direction
+            is_global: Filter by global flag
+            limit: Maximum number of records to return
+            
+        Returns:
+            List of line data dictionaries
+        """
+        if not self.chan_db:
+            raise RuntimeError("Chan database not available")
+            
+        return self.chan_db.get_chan_lines(
+            symbol, exchange, period, start_time, end_time, 
+            status, direction, is_global, limit
+        )
+    
+    def get_latest_chan_line(self, symbol: str, exchange: str, period: str) -> Optional[Dict[str, Any]]:
+        """Get the most recent Chan line for a symbol/period."""
+        if not self.chan_db:
+            raise RuntimeError("Chan database not available")
+            
+        return self.chan_db.get_latest_chan_line(symbol, exchange, period)
+    
+    def get_global_chan_line(self, symbol: str, exchange: str, period: str) -> Optional[Dict[str, Any]]:
+        """Get the current global Chan line for a symbol/period."""
+        if not self.chan_db:
+            raise RuntimeError("Chan database not available")
+            
+        return self.chan_db.get_global_chan_line(symbol, exchange, period)
+    
+    def update_chan_line_status(self, line_id: int, status: Any,
+                               break_type: Optional[Any] = None,
+                               break_price: Optional[float] = None) -> bool:
+        """Update Chan line status and break information."""
+        if not self.chan_db:
+            raise RuntimeError("Chan database not available")
+            
+        return self.chan_db.update_chan_line_status(line_id, status, break_type, break_price)
+    
+    def clear_chan_lines(self, symbol: str, exchange: str, period: str) -> int:
+        """Clear all Chan lines for a specific symbol/exchange/period."""
+        if not self.chan_db:
+            raise RuntimeError("Chan database not available")
+            
+        return self.chan_db.clear_chan_lines(symbol, exchange, period)
+    
+    def get_symbols_with_chan_lines(self) -> List[Dict[str, str]]:
+        """Get all symbol/exchange/period combinations that have Chan lines."""
+        if not self.chan_db:
+            return []
+            
+        return self.chan_db.get_symbols_with_lines()
+    
+    def get_chan_line_statistics(self, symbol: str, exchange: str, period: str) -> Dict[str, Any]:
+        """Get statistics about Chan lines for a symbol/period."""
+        if not self.chan_db:
+            return {}
+            
+        return self.chan_db.get_line_statistics(symbol, exchange, period)
+    
+    def backup_chan_database(self, backup_path: str):
+        """Backup the Chan database."""
+        if not self.chan_db:
+            raise RuntimeError("Chan database not available")
+            
+        self.chan_db.backup_database(backup_path)
+    
     def close(self):
         """Close all database connections."""
         try:
@@ -382,6 +529,10 @@ class DatabaseManager:
             if self.meta_db:
                 self.meta_db.close()
                 self.meta_db = None
+                
+            if self.chan_db:
+                self.chan_db.close()
+                self.chan_db = None
                 
             self.logger.info("All database connections closed")
             
@@ -400,6 +551,7 @@ class DatabaseManager:
 # Factory function for easier instantiation
 def create_database_manager(kbar_config: Optional[Dict[str, Any]] = None, 
                           meta_config: Optional[Dict[str, Any]] = None,
+                          chan_config: Optional[Dict[str, Any]] = None,
                           kbar_type: Optional[str] = None,
                           config_path: Optional[str] = None) -> DatabaseManager:
     """
@@ -408,6 +560,7 @@ def create_database_manager(kbar_config: Optional[Dict[str, Any]] = None,
     Args:
         kbar_config: K-bar database configuration. If None, loads from JSON.
         meta_config: SQLite configuration for meta data. If None, loads from JSON.
+        chan_config: SQLite configuration for Chan data. If None, loads from JSON.
         kbar_type: Type of K-bar database ('tdengine' or 'sqlite'). If None, uses type from JSON config.
         config_path: Path to configuration file. If None, uses default path.
         
@@ -421,6 +574,9 @@ def create_database_manager(kbar_config: Optional[Dict[str, Any]] = None,
     if meta_config is None:
         meta_config = get_default_meta_config(config_path)
     
+    if chan_config is None:
+        chan_config = get_default_chan_config(config_path)
+    
     # Determine kbar_type from configuration if not specified
     if kbar_type is None:
         kbar_type = kbar_config.get('type', 'sqlite')
@@ -428,6 +584,7 @@ def create_database_manager(kbar_config: Optional[Dict[str, Any]] = None,
     config = {
         'kbar_config': kbar_config,
         'meta_config': meta_config,
+        'chan_config': chan_config,
         'kbar_type': kbar_type
     }
     
@@ -492,6 +649,18 @@ def get_default_meta_config(config_path: Optional[str] = None) -> Dict[str, Any]
         'database_path': 'data/stock_meta.db',
         'timeout': 30.0,
         'check_same_thread': False
+    })
+
+
+def get_default_chan_config(config_path: Optional[str] = None) -> Dict[str, Any]:
+    """Get default Chan database configuration from JSON file."""
+    config = load_database_config(config_path)
+    return config.get('chan_config', {
+        'enabled': True,
+        'database_path': 'data/chan_db.db',
+        'timeout': 30.0,
+        'check_same_thread': False,
+        'create_dir': True
     })
 
 

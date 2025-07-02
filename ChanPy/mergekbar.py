@@ -32,9 +32,12 @@ class MergedKbar:
     close: float
     volume: int
     original_count: int = 1  # Number of original kbars merged into this one
+    original_kbars: List['Kbar'] = None  # List of original raw kbars that were merged
     
     def __post_init__(self):
         """Validate merged K-bar data after initialization"""
+        if self.original_kbars is None:
+            self.original_kbars = []
         if self.high < max(self.open, self.close) or self.low > min(self.open, self.close):
             raise ValueError("Invalid merged K-bar data: high/low inconsistent with open/close")
 

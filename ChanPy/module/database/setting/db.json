@@ -21,5 +21,12 @@
         "database_path": "tdx_db/stock_meta.db",
         "timeout": 30.0,
         "check_same_thread": false
+    },
+    "chan_config": {
+        "enabled": true,
+        "database_path": "tdx_db/chan_db.db",
+        "timeout": 30.0,
+        "check_same_thread": false,
+        "create_dir": true
     }
 }
