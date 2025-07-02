@@ -1,0 +1,25 @@
+{
+    "kbar_config": {
+        "enabled": true,
+        "type": "sqlite",
+        "tdengine": {
+            "enabled": true,
+            "host": "localhost",
+            "port": 6030,
+            "user": "root",
+            "password": "taosdata",
+            "database": "stock_kbar"
+        },
+        "sqlite": {
+            "enabled": true,
+            "database_path": "data/stock_kbar.db",
+            "create_dir": true
+        }
+    },
+    "meta_config": {
+        "enabled": true,
+        "database_path": "data/stock_meta.db",
+        "timeout": 30.0,
+        "check_same_thread": false
+    }
+}

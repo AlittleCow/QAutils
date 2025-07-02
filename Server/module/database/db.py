@@ -7,6 +7,8 @@ operations for stock data storage and retrieval.
 """
 
 import logging
+import json
+import os
 from typing import Dict, List, Optional, Union, Any, Tuple
 from datetime import datetime, timedelta
 import pandas as pd
@@ -67,21 +69,30 @@ class DatabaseManager:
             kbar_config = self.config.get('kbar_config', {})
             kbar_type = self.config.get('kbar_type', 'sqlite').lower()
             
-            if kbar_config:
+            # Check if K-bar database is enabled
+            kbar_enabled = kbar_config.get('enabled', True)
+            
+            if kbar_config and kbar_enabled:
                 if kbar_type == 'tdengine':
                     self._connect_tdengine_kbar(kbar_config)
                 elif kbar_type == 'sqlite':
                     self._connect_sqlite_kbar(kbar_config)
                 else:
                     self.logger.warning(f"Unknown K-bar database type: {kbar_type}. Supported types: 'tdengine', 'sqlite'")
+            elif not kbar_enabled:
+                self.logger.info("K-bar database is disabled in configuration")
             else:
                 self.logger.warning("No K-bar database configuration provided")
                 
             # Connect to SQLite for meta data
             meta_config = self.config.get('meta_config', {})
-            if meta_config:
+            meta_enabled = meta_config.get('enabled', True)
+            
+            if meta_config and meta_enabled:
                 self.meta_db = MetaDatabase(meta_config)
                 self.logger.info("Connected to SQLite for meta data")
+            elif not meta_enabled:
+                self.logger.info("Meta database is disabled in configuration")
             else:
                 self.logger.warning("No SQLite configuration provided")
                 
@@ -91,9 +102,16 @@ class DatabaseManager:
             
     def _connect_tdengine_kbar(self, kbar_config: Dict[str, Any]):
         """Connect to TDengine for K-bar data."""
+        tdengine_config = kbar_config.get('tdengine', {})
+        tdengine_enabled = tdengine_config.get('enabled', True)
+        
+        if not tdengine_enabled:
+            self.logger.info("TDengine is disabled in configuration")
+            return
+            
         if TDENGINE_AVAILABLE and TDengineKbarDatabase:
             try:
-                self.kbar_db = TDengineKbarDatabase(kbar_config)
+                self.kbar_db = TDengineKbarDatabase(tdengine_config)
                 self.logger.info("Connected to TDengine for K-bar data")
             except Exception as e:
                 self.logger.warning(f"Failed to connect to TDengine: {e}")
@@ -107,9 +125,16 @@ class DatabaseManager:
                 
     def _connect_sqlite_kbar(self, kbar_config: Dict[str, Any]):
         """Connect to SQLite for K-bar data."""
+        sqlite_config = kbar_config.get('sqlite', {})
+        sqlite_enabled = sqlite_config.get('enabled', True)
+        
+        if not sqlite_enabled:
+            self.logger.info("SQLite K-bar database is disabled in configuration")
+            return
+            
         if SQLITE_KBAR_AVAILABLE and SQLiteKbarDatabase:
             try:
-                self.kbar_db = SQLiteKbarDatabase(kbar_config)
+                self.kbar_db = SQLiteKbarDatabase(sqlite_config)
                 self.logger.info("Connected to SQLite for K-bar data")
             except Exception as e:
                 self.logger.warning(f"Failed to connect to SQLite K-bar database: {e}")
@@ -375,46 +400,113 @@ class DatabaseManager:
 # Factory function for easier instantiation
 def create_database_manager(kbar_config: Optional[Dict[str, Any]] = None, 
                           meta_config: Optional[Dict[str, Any]] = None,
-                          kbar_type: str = 'sqlite') -> DatabaseManager:
+                          kbar_type: Optional[str] = None,
+                          config_path: Optional[str] = None) -> DatabaseManager:
     """
     Factory function to create a DatabaseManager instance.
     
     Args:
-        kbar_config: K-bar database configuration (TDengine or SQLite)
-        meta_config: SQLite configuration for meta data
-        kbar_type: Type of K-bar database ('tdengine' or 'sqlite', default: 'sqlite')
+        kbar_config: K-bar database configuration. If None, loads from JSON.
+        meta_config: SQLite configuration for meta data. If None, loads from JSON.
+        kbar_type: Type of K-bar database ('tdengine' or 'sqlite'). If None, uses type from JSON config.
+        config_path: Path to configuration file. If None, uses default path.
         
     Returns:
         DatabaseManager instance
     """
+    # Load default configurations if not provided
+    if kbar_config is None:
+        kbar_config = get_full_kbar_config(config_path)
+    
+    if meta_config is None:
+        meta_config = get_default_meta_config(config_path)
+    
+    # Determine kbar_type from configuration if not specified
+    if kbar_type is None:
+        kbar_type = kbar_config.get('type', 'sqlite')
+    
     config = {
-        'kbar_config': kbar_config or {},
-        'meta_config': meta_config or {},
+        'kbar_config': kbar_config,
+        'meta_config': meta_config,
         'kbar_type': kbar_type
     }
     
     return DatabaseManager(config)
 
 
-# Default configuration templates
-DEFAULT_KBAR_CONFIG_TDENGINE = {
-    'host': 'localhost',
-    'port': 6030,
-    'user': 'root',
-    'password': 'taosdata',
-    'database': 'stock_kbar'
-}
+def load_database_config(config_path: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Load database configuration from JSON file.
+    
+    Args:
+        config_path: Path to configuration file. If None, uses default path.
+        
+    Returns:
+        Configuration dictionary
+    """
+    if config_path is None:
+        # Default to the setting directory relative to this file
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        config_path = os.path.join(current_dir, 'setting', 'db.json')
+    
+    try:
+        with open(config_path, 'r', encoding='utf-8') as f:
+            config = json.load(f)
+        return config
+    except FileNotFoundError:
+        logging.warning(f"Configuration file not found: {config_path}")
+        return {}
+    except json.JSONDecodeError:
+        logging.error(f"Invalid JSON in configuration file: {config_path}")
+        return {}
 
-DEFAULT_KBAR_CONFIG_SQLITE = {
-    'database_path': 'data/stock_kbar.db',
-    'create_dir': True
-}
 
-# Backward compatibility - keep the old name
-DEFAULT_KBAR_CONFIG = DEFAULT_KBAR_CONFIG_TDENGINE
+def get_default_kbar_config_tdengine(config_path: Optional[str] = None) -> Dict[str, Any]:
+    """Get default TDengine K-bar configuration from JSON file."""
+    config = load_database_config(config_path)
+    return config.get('kbar_config', {}).get('tdengine', {
+        'enabled': True,
+        'host': 'localhost',
+        'port': 6030,
+        'user': 'root',
+        'password': 'taosdata',
+        'database': 'stock_kbar'
+    })
 
-DEFAULT_META_CONFIG = {
-    'database_path': 'data/stock_meta.db',
-    'timeout': 30.0,
-    'check_same_thread': False
-}
+
+def get_default_kbar_config_sqlite(config_path: Optional[str] = None) -> Dict[str, Any]:
+    """Get default SQLite K-bar configuration from JSON file."""
+    config = load_database_config(config_path)
+    return config.get('kbar_config', {}).get('sqlite', {
+        'enabled': True,
+        'database_path': 'data/stock_kbar.db',
+        'create_dir': True
+    })
+
+
+def get_default_meta_config(config_path: Optional[str] = None) -> Dict[str, Any]:
+    """Get default meta database configuration from JSON file."""
+    config = load_database_config(config_path)
+    return config.get('meta_config', {
+        'enabled': True,
+        'database_path': 'data/stock_meta.db',
+        'timeout': 30.0,
+        'check_same_thread': False
+    })
+
+
+def get_full_kbar_config(config_path: Optional[str] = None) -> Dict[str, Any]:
+    """Get the full K-bar configuration including both TDengine and SQLite settings."""
+    config = load_database_config(config_path)
+    return config.get('kbar_config', {
+        'enabled': True,
+        'type': 'sqlite',
+        'tdengine': get_default_kbar_config_tdengine(config_path),
+        'sqlite': get_default_kbar_config_sqlite(config_path)
+    })
+
+
+# Backward compatibility - keep the old names as function calls
+def get_default_kbar_config(config_path: Optional[str] = None) -> Dict[str, Any]:
+    """Get default K-bar configuration (TDengine for backward compatibility)."""
+    return get_default_kbar_config_tdengine(config_path)
