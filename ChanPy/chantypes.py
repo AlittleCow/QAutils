@@ -496,6 +496,28 @@ class KBarRelationship(Enum):
     SAME_HIGH_K1_LOWER = "same_high_k1_lower"
     SAME_HIGH_K2_LOWER = "same_high_k2_lower"
     
+    def __str__(self) -> str:
+        """String representation for better debug alignment"""
+        # Create a mapping of enum values to formatted strings with consistent width
+        formatted_names = {
+            "k1_contains_k2": "K1_CONTAINS_K2   ",
+            "k2_contains_k1": "K2_CONTAINS_K1   ",
+            "identical": "IDENTICAL        ",
+            "k1_above_k2": "K1_ABOVE_K2      ",
+            "k1_below_k2": "K1_BELOW_K2      ",
+            "up_overlap": "UP_OVERLAP       ",
+            "down_overlap": "DOWN_OVERLAP     ",
+            "same_low_k1_higher": "SAME_LOW_K1_HIGH ",
+            "same_low_k2_higher": "SAME_LOW_K2_HIGH ",
+            "same_high_k1_lower": "SAME_HIGH_K1_LOW ",
+            "same_high_k2_lower": "SAME_HIGH_K2_LOW "
+        }
+        return formatted_names.get(self.value, f"{self.value:16s}")
+    
+    def __repr__(self) -> str:
+        """Detailed representation for debugging"""
+        return self.__str__()
+    
     @classmethod
     def determine_relationship(cls, d1: float, g1: float, d2: float, g2: float) -> 'KBarRelationship':
         """

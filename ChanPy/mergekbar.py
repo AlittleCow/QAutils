@@ -39,6 +39,28 @@ class MergedKbar:
         """Validate merged K-bar data after initialization"""
         if self.high < max(self.open, self.close) or self.low > min(self.open, self.close):
             raise ValueError("Invalid merged K-bar data: high/low inconsistent with open/close")
+    
+    def __str__(self) -> str:
+        """String representation for debugging"""
+        direction = "↑" if self.close > self.open else "↓" if self.close < self.open else "→"
+        body_size = abs(self.close - self.open)
+        range_size = self.high - self.low
+        
+        # Format timestamps to be more readable
+        start_str = self.timestamp_start.replace('+00:00', '').replace('T', ' ')
+        end_str = self.timestamp_end.replace('+00:00', '').replace('T', ' ')
+        if len(start_str) > 19:
+            start_str = start_str[:19]
+        if len(end_str) > 19:
+            end_str = end_str[:19]
+        
+        return (f"MergedKbar({start_str:19s}→{end_str:19s} {direction}\n"
+                f"O:{self.open:6.2f} H:{self.high:6.2f} L:{self.low:6.2f} C:{self.close:6.2f} "
+                f"V:{self.volume:8d} Body:{body_size:5.2f} Range:{range_size:5.2f} Count:{self.original_count})")
+    
+    def __repr__(self) -> str:
+        """Detailed representation for debugging"""
+        return self.__str__()
 
 
 class KbarMerger:
@@ -96,7 +118,7 @@ class KbarMerger:
         # which means the kbars can be merged
         can_merge_result = relationship not in non_mergeable_relationships
         
-        self.logger.debug(f"Kbar relationship: {relationship.value} - Can merge: {can_merge_result}")
+        self.logger.debug(f"Kbar relationship: {relationship} - Can merge: {can_merge_result}")
         if can_merge_result:
             self.logger.debug(f"Kbar1: {kbar1}")
             self.logger.debug(f"Kbar2: {kbar2}")
@@ -128,7 +150,7 @@ class KbarMerger:
         
         # Volume is sum of both
         merged_volume = kbar1.volume + kbar2.volume
-        
+
         return MergedKbar(
             timestamp_start=kbar1.timestamp,
             timestamp_end=kbar2.timestamp,
@@ -182,6 +204,10 @@ class KbarMerger:
                     # Merge the two kbars (skip merge check since we already verified)
                     merged = self.merge_two_kbars(current_kbar, next_kbar, skip_merge_check=True)
                     
+                    # print the merged kbar
+                    self.logger.debug(f"Merged kbar: {merged}")
+                    
+
                     # Continue merging with subsequent kbars if possible
                     j = i + 2
                     while j < len(kbars):
