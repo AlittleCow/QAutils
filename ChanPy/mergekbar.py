@@ -27,6 +27,8 @@ class MergedKbar:
     volume: int
     original_count: int = 1  # Number of original kbars merged into this one
     original_kbars: List['Kbar'] = field(default_factory=list)  # List of original raw kbars that were merged
+    mergetype: Optional[KBarRelationship] = None  # How this mergekbar was merged
+    merge_direction: Direction = Direction.UNKNOWN  # Direction of the merge
     
     def __post_init__(self):
         """Validate merged K-bar data after initialization"""
@@ -47,9 +49,12 @@ class MergedKbar:
         if len(end_str) > 19:
             end_str = end_str[:19]
         
+        # Add merge info to string representation
+        merge_info = f"Type:{self.mergetype.value if self.mergetype else 'None'} Dir:{self.merge_direction.name}"
+        
         return (f"MergedKbar({start_str:19s}→{end_str:19s} {direction}\n"
                 f"O:{self.open:6.2f} H:{self.high:6.2f} L:{self.low:6.2f} C:{self.close:6.2f} "
-                f"V:{self.volume:8d} Body:{body_size:5.2f} Range:{range_size:5.2f} Count:{self.original_count})")
+                f"V:{self.volume:8d} Body:{body_size:5.2f} Range:{range_size:5.2f} Count:{self.original_count} {merge_info})")
     
     def __repr__(self) -> str:
         """Detailed representation for debugging"""
@@ -166,7 +171,9 @@ class KbarMerger:
             low=merged_low,
             close=merged_close,
             volume=merged_volume,
-            original_count=2
+            original_count=2,
+            mergetype=self._get_merge_relationship(kbar1, kbar2),
+            merge_direction=merge_direction
         )
     
     def process_kbar_sequence(self, kbars: List['Kbar']) -> List[MergedKbar]:
@@ -180,7 +187,7 @@ class KbarMerger:
             List of merged kbars
         """
         if len(kbars) < 2:
-            # Convert single kbar to merged format
+            # Convert single kbar to MergedKbar
             if len(kbars) == 1:
                 kbar = kbars[0]
                 return [MergedKbar(
@@ -191,7 +198,9 @@ class KbarMerger:
                     low=kbar.low,
                     close=kbar.close,
                     volume=kbar.volume,
-                    original_count=1
+                    original_count=1,
+                    mergetype=None,  # No actual merging happened
+                    merge_direction=Direction.UNKNOWN
                 )]
             return []
         
@@ -245,13 +254,15 @@ class KbarMerger:
                         low=current_kbar.low,
                         close=current_kbar.close,
                         volume=current_kbar.volume,
-                        original_count=1
+                        original_count=1,
+                        mergetype=None,  # No actual merging happened
+                        merge_direction=Direction.UNKNOWN
                     )
                     merged_result.append(single_merged)
                     i += 1
             else:
-                # Last kbar, add as single merged kbar
-                single_merged = MergedKbar(
+                # Add the last kbar as single merged kbar
+                merged_result.append(MergedKbar(
                     timestamp_start=current_kbar.timestamp,
                     timestamp_end=current_kbar.timestamp,
                     open=current_kbar.open,
@@ -259,9 +270,10 @@ class KbarMerger:
                     low=current_kbar.low,
                     close=current_kbar.close,
                     volume=current_kbar.volume,
-                    original_count=1
-                )
-                merged_result.append(single_merged)
+                    original_count=1,
+                    mergetype=None,  # No actual merging happened
+                    merge_direction=Direction.UNKNOWN
+                ))
                 i += 1
         
         self.merged_kbars = merged_result
@@ -320,7 +332,9 @@ class KbarMerger:
             low=new_low,
             close=kbar.close,
             volume=merged_kbar.volume + kbar.volume,
-            original_count=merged_kbar.original_count + 1
+            original_count=merged_kbar.original_count + 1,
+            mergetype=self._get_merge_relationship(temp_kbar, kbar),
+            merge_direction=merge_direction
         )
     
     def get_merge_direction(self, merged_kbar: MergedKbar) -> Direction:
