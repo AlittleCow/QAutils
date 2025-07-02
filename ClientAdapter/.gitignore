@@ -25,7 +25,6 @@ Makefile
 
 # Compiled binaries
 *.exe
-*.dll
 *.so
 *.dylib
 *.lib
