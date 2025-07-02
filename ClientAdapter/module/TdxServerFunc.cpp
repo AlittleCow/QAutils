@@ -582,71 +582,6 @@ TDX_EXPORT(TdxServer_CalculateSMA)
 }
 
 /**
- * @brief TDX API function to calculate RSI (Relative Strength Index)
- * @param DataLen Number of data points
- * @param pfOUT Output array (RSI values)
- * @param pfINa Input array A (price data)
- * @param pfINb Input array B (period)
- * @param pfINc Input array C (unused)
- */
-TDX_EXPORT(TdxServer_CalculateRSI)
-{
-    ServerManager& manager = ServerManager::GetInstance();
-    auto* client = manager.GetZmqClient();
-    
-    if (client && client->isConnected()) {
-        try {
-            std::vector<double> priceData = {100.0, 101.0, 102.0, 103.0, 104.0}; // Sample data
-            int period = 14; // Default period
-            
-            json response = client->calculateRSI(priceData, period);
-            if (response.contains("status") && response["status"] == "success") {
-                log_debug("RSI calculated successfully, period=%d", period);
-            } else {
-                log_error("RSI calculation failed: %s", response.dump().c_str());
-            }
-        } catch (const std::exception& e) {
-            log_error("RSI calculation exception: %s", e.what());
-        }
-    } else {
-        log_debug("RSI: Server not connected");
-    }
-}
-
-/**
- * @brief TDX API function to calculate Bollinger Bands
- * @param DataLen Number of data points
- * @param pfOUT Output array (encoded Bollinger Bands data)
- * @param pfINa Input array A (price data)
- * @param pfINb Input array B (period)
- * @param pfINc Input array C (standard deviation multiplier * 100)
- */
-TDX_EXPORT(TdxServer_CalculateBollinger)
-{
-    ServerManager& manager = ServerManager::GetInstance();
-    auto* client = manager.GetZmqClient();
-    
-    if (client && client->isConnected()) {
-        try {
-            std::vector<double> priceData = {100.0, 101.0, 102.0, 103.0, 104.0}; // Sample data
-            int period = 20; // Default period
-            double stdDev = 2.0; // Default std dev
-            
-            json response = client->testBollingerBands(priceData, period, stdDev);
-            if (response.contains("status") && response["status"] == "success") {
-                log_debug("Bollinger Bands calculated successfully, period=%d, stdDev=%f", period, stdDev);
-            } else {
-                log_error("Bollinger Bands calculation failed: %s", response.dump().c_str());
-            }
-        } catch (const std::exception& e) {
-            log_error("Bollinger Bands calculation exception: %s", e.what());
-        }
-    } else {
-        log_debug("Bollinger Bands: Server not connected");
-    }
-}
-
-/**
  * @brief TDX API function to send K-bar series data to server
  * @param DataLen Number of data points
  * @param pfOUT Output array (server response)
@@ -777,38 +712,6 @@ TDX_EXPORT(TdxServer_SendKBarSeries)
         }
     } else {
         log_error("SendKBarSeries: Server not connected");
-    }
-}
-
-/**
- * @brief TDX API function to calculate EMA (Exponential Moving Average)
- * @param DataLen Number of data points
- * @param pfOUT Output array (EMA values)
- * @param pfINa Input array A (price data)
- * @param pfINb Input array B (period)
- * @param pfINc Input array C (unused)
- */
-TDX_EXPORT(TdxServer_CalculateEMA)
-{
-    ServerManager& manager = ServerManager::GetInstance();
-    auto* client = manager.GetZmqClient();
-    
-    if (client && client->isConnected()) {
-        try {
-            std::vector<double> priceData = {100.0, 101.0, 102.0, 103.0, 104.0}; // Sample data
-            int period = 12; // Default period
-            
-            json response = client->calculateEMA(priceData, period);
-            if (response.contains("status") && response["status"] == "success") {
-                log_debug("EMA calculated successfully, period=%d", period);
-            } else {
-                log_error("EMA calculation failed: %s", response.dump().c_str());
-            }
-        } catch (const std::exception& e) {
-            log_error("EMA calculation exception: %s", e.what());
-        }
-    } else {
-        log_debug("EMA: Server not connected");
     }
 }
 
@@ -1164,105 +1067,6 @@ public:
 };
 
 /**
- * @brief Wrapper class for TdxServer_CalculateRSI function
- */
-class TdxServerCalculateRSIFunction : public TdxFunctionBase
-{
-public:
-    /**
-     * @brief Constructor
-     */
-    TdxServerCalculateRSIFunction()
-        : TdxFunctionBase(TDX_SERVER_FUNCTION_ID_OFFSET + 8, "TdxServer_CalculateRSI", "Calculate RSI (Relative Strength Index)", "Server", 1, false)
-    {
-    }
-
-    /**
-     * @brief Get unique C-style function pointer
-     * @return Function pointer for TdxServer_CalculateRSI
-     */
-    pPluginFUNC GetCFunctionPointer() override
-    {
-        return &TdxServer_CalculateRSI;
-    }
-
-    /**
-     * @brief Provide detailed parameter information
-     * @return Parameter usage description
-     */
-    std::string GetParameterInfo() const override
-    {
-        return "Parameters: pInA=Price data, pInB=Period, pInC=unused, pOut=RSI values";
-    }
-};
-
-/**
- * @brief Wrapper class for TdxServer_CalculateBollinger function
- */
-class TdxServerCalculateBollingerFunction : public TdxFunctionBase
-{
-public:
-    /**
-     * @brief Constructor
-     */
-    TdxServerCalculateBollingerFunction()
-        : TdxFunctionBase(TDX_SERVER_FUNCTION_ID_OFFSET + 9, "TdxServer_CalculateBollinger", "Calculate Bollinger Bands", "Server", 1, false)
-    {
-    }
-
-    /**
-     * @brief Get unique C-style function pointer
-     * @return Function pointer for TdxServer_CalculateBollinger
-     */
-    pPluginFUNC GetCFunctionPointer() override
-    {
-        return &TdxServer_CalculateBollinger;
-    }
-
-    /**
-     * @brief Provide detailed parameter information
-     * @return Parameter usage description
-     */
-    std::string GetParameterInfo() const override
-    {
-        return "Parameters: pInA=Price data, pInB=Period, pInC=Std dev multiplier, pOut=Bollinger Bands";
-    }
-};
-
-/**
- * @brief Wrapper class for TdxServer_CalculateEMA function
- */
-class TdxServerCalculateEMAFunction : public TdxFunctionBase
-{
-public:
-    /**
-     * @brief Constructor
-     */
-    TdxServerCalculateEMAFunction()
-        : TdxFunctionBase(TDX_SERVER_FUNCTION_ID_OFFSET + 10, "TdxServer_CalculateEMA", "Calculate Exponential Moving Average", "Server", 1, false)
-    {
-    }
-
-    /**
-     * @brief Get unique C-style function pointer
-     * @return Function pointer for TdxServer_CalculateEMA
-     */
-    pPluginFUNC GetCFunctionPointer() override
-    {
-        return &TdxServer_CalculateEMA;
-    }
-
-    /**
-     * @brief Provide detailed parameter information
-     * @return Parameter usage description
-     */
-    std::string GetParameterInfo() const override
-    {
-        return "Parameters: pInA=Price data, pInB=Period, pInC=unused, pOut=EMA values";
-    }
-};
-
-/**
  * @brief Wrapper class for TdxServer_SetParameter function
  */
 class TdxServerSetParameterFunction : public TdxFunctionBase
@@ -1419,9 +1223,6 @@ bool RegisterTdxServerFunctions()
         success &= registry.RegisterFunction(std::make_shared<TdxServerSendKBarSeriesFunction>());
         success &= registry.RegisterFunction(std::make_shared<TdxServerSendKBarFunction>());
         success &= registry.RegisterFunction(std::make_shared<TdxServerCalculateSMAFunction>());
-        success &= registry.RegisterFunction(std::make_shared<TdxServerCalculateRSIFunction>());
-        success &= registry.RegisterFunction(std::make_shared<TdxServerCalculateBollingerFunction>());
-        success &= registry.RegisterFunction(std::make_shared<TdxServerCalculateEMAFunction>());
         success &= registry.RegisterFunction(std::make_shared<TdxServerSetParameterFunction>());
         success &= registry.RegisterFunction(std::make_shared<TdxServerGetParameterFunction>());
         success &= registry.RegisterFunction(std::make_shared<TdxServerCleanupAndDisconnectFunction>());

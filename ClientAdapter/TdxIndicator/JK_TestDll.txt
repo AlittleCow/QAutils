@@ -56,9 +56,6 @@ EMA周期:12,NODRAW;
 
 {使用QuantServer计算各种技术指标}
 SMA指标:=TDXDLL1(17,价格数据,SMA周期,0);      {TDXSERVER_CALCULATESMA - QuantServer简单移动平均}
-RSI指标:=TDXDLL1(18,价格数据,RSI周期,0);      {TDXSERVER_CALCULATERSI - QuantServer相对强弱指标}
-EMA指标:=TDXDLL1(21,价格数据,EMA周期,0);      {TDXSERVER_CALCULATEEMA - QuantServer指数移动平均}
-布林带:=TDXDLL1(19,价格数据,布林周期,布林标准差);  {TDXSERVER_CALCULATEBOLLINGER - QuantServer布林带}
 
 {STEP 6: 测试QuantServer参数管理}
 {设置QuantServer参数}

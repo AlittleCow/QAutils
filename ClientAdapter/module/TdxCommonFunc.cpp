@@ -375,8 +375,9 @@ TDX_EXPORT(TdxKbar_SetOHLC)
         temp_high.push_back(pfINb[i]);
         temp_low.push_back(pfINc[i]);
     }
-    log_debug("TdxKbar_SetOHLC: DataLen=%d, sample OHLC[0]=(%.2f,%.2f,%.2f)", 
-             DataLen, DataLen > 0 ? pfINa[0] : 0.0f, DataLen > 0 ? pfINb[0] : 0.0f, DataLen > 0 ? pfINc[0] : 0.0f);
+    log_debug("TdxKbar_SetOHLC: DataLen=%d, sample OHLC[%d]=(%.2f,%.2f,%.2f)", 
+             DataLen, DataLen > 0 ? DataLen - 1 : 0,
+             DataLen > 0 ? pfINa[DataLen - 1] : 0.0f, DataLen > 0 ? pfINb[DataLen - 1] : 0.0f, DataLen > 0 ? pfINc[DataLen - 1] : 0.0f);
 }
 
 /**
@@ -400,8 +401,9 @@ TDX_EXPORT(TdxKbar_SetCloseVolume)
         temp_close.push_back(pfINa[i]);
         temp_volume.push_back(static_cast<long>(pfINb[i]));
     }
-    log_debug("TdxKbar_SetCloseVolume: DataLen=%d, sample CV[0]=(%.2f,%ld)", 
-             DataLen, DataLen > 0 ? pfINa[0] : 0.0f, DataLen > 0 ? static_cast<long>(pfINb[0]) : 0L);
+    log_debug("TdxKbar_SetCloseVolume: DataLen=%d, sample CV[%d]=(%.2f,%ld)", 
+             DataLen, DataLen > 0 ? DataLen - 1 : 0,
+             DataLen > 0 ? pfINa[DataLen - 1] : 0.0f, DataLen > 0 ? static_cast<long>(pfINb[DataLen - 1]) : 0L);
 }
 
 /**

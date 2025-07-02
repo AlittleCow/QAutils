@@ -101,29 +101,12 @@ void demonstrateZmqClient() {
         auto all_params_response = client.getAllParameters();
         std::cout << "All params response: " << all_params_response.dump(2) << std::endl;
 
-        // Test Bollinger Bands
-        std::cout << "\n=== Testing Bollinger Bands ===" << std::endl;
-        std::vector<double> extended_price_data = {100, 102, 101, 103, 105, 104, 106, 108, 107, 109, 
-                                                  111, 110, 112, 114, 113, 115, 117, 116, 118, 120,
-                                                  122, 121, 123, 125, 124, 126, 128, 127, 129, 131};
-        auto bollinger_response = client.testBollingerBands(extended_price_data, 20, 2.0);
-        std::cout << "Bollinger Bands response: " << bollinger_response.dump(2) << std::endl;
-
         // Test individual indicator methods
         std::cout << "\n=== Testing Individual Indicator Methods ===" << std::endl;
         
         // SMA
         auto sma_response = client.calculateSMA(price_data, 5);
         std::cout << "SMA response: " << sma_response.dump(2) << std::endl;
-        
-        // RSI
-        auto rsi_response = client.calculateRSI(price_data, 14);
-        std::cout << "RSI response: " << rsi_response.dump(2) << std::endl;
-        
-        // EMA
-        auto ema_response = client.calculateEMA(price_data, 10);
-        std::cout << "EMA response: " << ema_response.dump(2) << std::endl;
-
         std::cout << "\n=== All tests completed ===" << std::endl;
 
     } catch (const std::exception& e) {

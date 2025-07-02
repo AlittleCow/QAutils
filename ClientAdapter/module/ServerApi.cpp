@@ -396,27 +396,6 @@ json ZmqClient::getAllParameters() {
     return sendRequest(message);
 }
 
-/**
- * @brief Test Bollinger Bands calculation
- * 
- * @param price_data Vector of price data
- * @param period Period for calculation
- * @param std_dev Standard deviation multiplier
- * @return json Server response
- */
-json ZmqClient::testBollingerBands(const std::vector<double>& price_data, int period, double std_dev) {
-    ApiRequest request = {
-        "Bollinger Bands",
-        "bollinger",
-        {
-            {"data", price_data},
-            {"period", period},
-            {"std_dev", std_dev}
-        },
-        true
-    };
-    return testApiCalls({request});
-}
 
 /**
  * @brief Helper method to create Simple Moving Average request
@@ -429,46 +408,6 @@ json ZmqClient::calculateSMA(const std::vector<double>& price_data, int period) 
     ApiRequest request = {
         "Simple Moving Average",
         "sma",
-        {
-            {"data", price_data},
-            {"period", period}
-        },
-        true
-    };
-    return testApiCalls({request});
-}
-
-/**
- * @brief Helper method to create RSI request
- * 
- * @param price_data Vector of price data
- * @param period Period for RSI calculation
- * @return json Server response
- */
-json ZmqClient::calculateRSI(const std::vector<double>& price_data, int period) {
-    ApiRequest request = {
-        "RSI",
-        "rsi",
-        {
-            {"data", price_data},
-            {"period", period}
-        },
-        true
-    };
-    return testApiCalls({request});
-}
-
-/**
- * @brief Helper method to create EMA request
- * 
- * @param price_data Vector of price data
- * @param period Period for EMA calculation
- * @return json Server response
- */
-json ZmqClient::calculateEMA(const std::vector<double>& price_data, int period) {
-    ApiRequest request = {
-        "EMA",
-        "ema",
         {
             {"data", price_data},
             {"period", period}

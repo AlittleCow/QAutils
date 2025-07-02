@@ -224,26 +224,6 @@ extern "C" {
     void TdxServer_CalculateSMA(int DataLen, float* pfOUT, float* pfINa, float* pfINb, float* pfINc);
 
     /**
-     * @brief TDX API function to calculate RSI (Relative Strength Index)
-     * @param DataLen Number of data points
-     * @param pfOUT Output array (RSI values)
-     * @param pfINa Input array A (price data)
-     * @param pfINb Input array B (period)
-     * @param pfINc Input array C (unused)
-     */
-    void TdxServer_CalculateRSI(int DataLen, float* pfOUT, float* pfINa, float* pfINb, float* pfINc);
-
-    /**
-     * @brief TDX API function to calculate Bollinger Bands
-     * @param DataLen Number of data points
-     * @param pfOUT Output array (encoded Bollinger Bands data)
-     * @param pfINa Input array A (price data)
-     * @param pfINb Input array B (period)
-     * @param pfINc Input array C (standard deviation multiplier * 100)
-     */
-    void TdxServer_CalculateBollinger(int DataLen, float* pfOUT, float* pfINa, float* pfINb, float* pfINc);
-
-    /**
      * @brief TDX API function to send K-bar series data to server
      * @param DataLen Number of data points
      * @param pfOUT Output array (server response)
@@ -252,16 +232,6 @@ extern "C" {
      * @param pfINc Input array C (K-bar length/count to send)
      */
     void TdxServer_SendKBarSeries(int DataLen, float* pfOUT, float* pfINa, float* pfINb, float* pfINc);
-
-    /**
-     * @brief TDX API function to calculate EMA (Exponential Moving Average)
-     * @param DataLen Number of data points
-     * @param pfOUT Output array (EMA values)
-     * @param pfINa Input array A (price data)
-     * @param pfINb Input array B (period)
-     * @param pfINc Input array C (unused)
-     */
-    void TdxServer_CalculateEMA(int DataLen, float* pfOUT, float* pfINa, float* pfINb, float* pfINc);
 
     /**
      * @brief TDX API function to set server parameters

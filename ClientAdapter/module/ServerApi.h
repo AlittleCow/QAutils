@@ -162,15 +162,6 @@ public:
      */
     json getAllParameters();
 
-    /**
-     * @brief Test Bollinger Bands calculation
-     * 
-     * @param price_data Vector of price data
-     * @param period Period for calculation (default: 20)
-     * @param std_dev Standard deviation multiplier (default: 2.0)
-     * @return json Server response
-     */
-    json testBollingerBands(const std::vector<double>& price_data, int period = 20, double std_dev = 2.0);
 
     /**
      * @brief Helper method to create Simple Moving Average request
@@ -180,24 +171,6 @@ public:
      * @return json Server response
      */
     json calculateSMA(const std::vector<double>& price_data, int period);
-
-    /**
-     * @brief Helper method to create RSI request
-     * 
-     * @param price_data Vector of price data
-     * @param period Period for RSI calculation
-     * @return json Server response
-     */
-    json calculateRSI(const std::vector<double>& price_data, int period);
-
-    /**
-     * @brief Helper method to create EMA request
-     * 
-     * @param price_data Vector of price data
-     * @param period Period for EMA calculation
-     * @return json Server response
-     */
-    json calculateEMA(const std::vector<double>& price_data, int period);
 
     /**
      * @brief Check if all required dependencies are available
