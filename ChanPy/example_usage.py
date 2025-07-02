@@ -15,17 +15,83 @@ import os
 import sys
 from datetime import datetime, timedelta
 from typing import List, Optional
-from .chan_processor import ChanProcessor
-from .chan import Kbar
 
-# Add the database module path
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'Server', 'module', 'database'))
+# Add paths to allow imports when running directly
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(current_dir)  # QAutils
+grandparent_dir = os.path.dirname(parent_dir)  # qautil root
 
+# Add paths for imports
+if grandparent_dir not in sys.path:
+    sys.path.insert(0, grandparent_dir)
+if parent_dir not in sys.path:
+    sys.path.insert(0, parent_dir)
+
+# Now we can import from the ChanPy package
 try:
-    from db import create_database_manager, DatabaseManager
-    DATABASE_AVAILABLE = True
+    # Try relative imports first (works when run as module)
+    from .chan_processor import ChanProcessor
+    from .chan import Kbar
 except ImportError:
-    print("Warning: Database module not available. Using synthetic data.")
+    # Fall back to absolute imports (works when run directly)
+    from QAutils.ChanPy.chan_processor import ChanProcessor
+    from QAutils.ChanPy.chan import Kbar
+
+# Import database modules from local module directory
+try:
+    # Try relative imports first (works when run as module)
+    from .module.database.kbar_db_sqlite import KbarDatabase as SQLiteKbarDatabase
+    from .module.database.meta_db import MetaDatabase  
+    from .module.database.db import DatabaseManager
+except ImportError:
+    # Fall back to absolute imports (works when run directly)
+    from QAutils.ChanPy.module.database.kbar_db_sqlite import KbarDatabase as SQLiteKbarDatabase
+    from QAutils.ChanPy.module.database.meta_db import MetaDatabase
+    from QAutils.ChanPy.module.database.db import DatabaseManager
+
+# Create a custom database manager configuration for SQLite
+def create_sqlite_database_manager():
+    """Create a database manager configured for SQLite with the correct path."""
+    # Absolute path to the database
+    db_path = os.path.join(parent_dir, 'Server', 'tdx_db', 'stock_kbar.db')
+    meta_db_path = os.path.join(parent_dir, 'Server', 'tdx_db', 'stock_meta.db')
+    
+    # Ensure the directory exists
+    os.makedirs(os.path.dirname(db_path), exist_ok=True)
+    
+    config = {
+        'kbar_config': {
+            'enabled': True,
+            'type': 'sqlite',
+            'sqlite': {
+                'enabled': True,
+                'database_path': db_path,
+                'create_dir': True
+            }
+        },
+        'meta_config': {
+            'enabled': True,
+            'database_path': meta_db_path,
+            'timeout': 30.0,
+            'check_same_thread': False
+        },
+        'kbar_type': 'sqlite'
+    }
+    
+    try:
+        return DatabaseManager(config)
+    except Exception as e:
+        print(f"Failed to create database manager: {e}")
+        return None
+
+# Set up database availability
+try:
+    db_manager_factory = create_sqlite_database_manager
+    DATABASE_AVAILABLE = True
+    print("✓ SQLite database configuration loaded successfully")
+except Exception as e:
+    print(f"Warning: Database module not available: {e}")
+    print("Using synthetic data.")
     DATABASE_AVAILABLE = False
 
 
@@ -48,8 +114,11 @@ def load_kbar_data_from_database(symbol: str = "000001", exchange: str = "SH",
         return create_sample_kbars(limit)
     
     try:
-        # Create database manager with default configuration
-        db_manager = create_database_manager()
+        # Create database manager with SQLite configuration
+        db_manager = db_manager_factory()
+        if db_manager is None:
+            print("Failed to create database manager, falling back to synthetic data")
+            return create_sample_kbars(limit)
         
         # Check if database is available
         stats = db_manager.get_database_stats()
@@ -108,7 +177,10 @@ def get_available_symbols() -> List[dict]:
         return [{'symbol': '000001', 'exchange': 'SH', 'period': '1min'}]
     
     try:
-        db_manager = create_database_manager()
+        db_manager = db_manager_factory()
+        if db_manager is None:
+            return [{'symbol': '000001', 'exchange': 'SH', 'period': '1min'}]
+            
         symbols = db_manager.get_symbols_with_data()
         db_manager.close()
         return symbols if symbols else [{'symbol': '000001', 'exchange': 'SH', 'period': '1min'}]
@@ -127,6 +199,7 @@ def create_sample_kbars(count: int = 50) -> List[Kbar]:
     Returns:
         List of sample kbars with simulated price movement
     """
+    import random
     kbars = []
     base_price = 100.0
     current_price = base_price
@@ -139,18 +212,24 @@ def create_sample_kbars(count: int = 50) -> List[Kbar]:
             direction = 1 if current_price < base_price + 5 else -1
         
         # Random price movement
-        import random
         price_change = random.uniform(-0.5, 0.5) + direction * 0.1
         current_price += price_change
         
         # Ensure positive prices
         current_price = max(current_price, 50.0)
         
-        # Create kbar with some randomness
-        high = current_price + random.uniform(0, 0.3)
-        low = current_price - random.uniform(0, 0.3)
-        open_price = current_price - random.uniform(-0.2, 0.2)
-        close_price = current_price
+        # Create valid OHLC data
+        open_price = current_price + random.uniform(-0.2, 0.2)
+        close_price = current_price + random.uniform(-0.3, 0.3)
+        
+        # Ensure high is at least the maximum of open and close
+        high = max(open_price, close_price) + random.uniform(0, 0.3)
+        
+        # Ensure low is at most the minimum of open and close
+        low = min(open_price, close_price) - random.uniform(0, 0.3)
+        
+        # Ensure all prices are positive
+        low = max(low, 10.0)
         
         timestamp = (datetime.now() + timedelta(minutes=i)).strftime("%Y-%m-%d %H:%M:%S")
         
@@ -177,7 +256,7 @@ def demonstrate_step_by_step_processing():
     
     # Load data from database or use synthetic data
     print("Loading kbar data...")
-    kbars = load_kbar_data_from_database(symbol="000001", exchange="SH", period="1min", limit=30)
+    kbars = load_kbar_data_from_database(symbol="002120", exchange="SH", period="daily", limit=3000)
     print(f"Using {len(kbars)} kbars for analysis")
     
     # Initialize processors
@@ -258,10 +337,17 @@ def demonstrate_individual_components():
     """Demonstrate individual component usage"""
     print("\n=== Individual Component Usage ===")
     
-    from .mergekbar import KbarMerger
-    from .fractal import FractalIdentifier
-    from .pen import PenProcessor
-    from .line import LineProcessor
+    # Import individual components with fallback handling
+    try:
+        from .mergekbar import KbarMerger
+        from .fractal import FractalIdentifier
+        from .pen import PenProcessor
+        from .line import LineProcessor
+    except ImportError:
+        from QAutils.ChanPy.mergekbar import KbarMerger
+        from QAutils.ChanPy.fractal import FractalIdentifier
+        from QAutils.ChanPy.pen import PenProcessor
+        from QAutils.ChanPy.line import LineProcessor
     
     # Load data from database or use synthetic data
     kbars = load_kbar_data_from_database(symbol="000001", exchange="SH", period="1min", limit=20)
@@ -402,20 +488,20 @@ def main():
     try:
         # Run demonstrations
         demonstrate_step_by_step_processing()
-        demonstrate_individual_components()
-        demonstrate_market_analysis()
+        # demonstrate_individual_components()
+        # demonstrate_market_analysis()
         
-        # Only run multiple symbols demo if database is available
-        if DATABASE_AVAILABLE:
-            demonstrate_multiple_symbols()
+        # # Only run multiple symbols demo if database is available
+        # if DATABASE_AVAILABLE:
+        #     demonstrate_multiple_symbols()
         
-        print("\n=== Demo Complete ===")
-        print("The modular Chan algorithm implementation successfully:")
-        print("1. ✓ Merged consecutive kbars based on inclusion relationships")
-        print("2. ✓ Identified fractals from merged kbar patterns")  
-        print("3. ✓ Validated pens using raw kbar data")
-        print("4. ✓ Formed lines and analyzed breaking patterns")
-        print("5. ✓ Maintained global line state for ongoing analysis")
+        # print("\n=== Demo Complete ===")
+        # print("The modular Chan algorithm implementation successfully:")
+        # print("1. ✓ Merged consecutive kbars based on inclusion relationships")
+        # print("2. ✓ Identified fractals from merged kbar patterns")  
+        # print("3. ✓ Validated pens using raw kbar data")
+        # print("4. ✓ Formed lines and analyzed breaking patterns")
+        # print("5. ✓ Maintained global line state for ongoing analysis")
         
         if DATABASE_AVAILABLE:
             print("6. ✓ Loaded real market data from database")
