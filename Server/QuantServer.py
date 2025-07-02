@@ -17,6 +17,10 @@ import time
 from typing import Dict, Any, List, Optional, Union
 from datetime import datetime
 import traceback
+import pandas as pd
+
+# Import database manager
+from module.database.db import DatabaseManager, create_database_manager
 
 
 class QuantServer:
@@ -55,6 +59,14 @@ class QuantServer:
         # Initialize indicator functions registry
         self.indicator_registry = {}
         self._register_default_indicators()
+
+        # Initialize database manager with default configuration
+        try:
+            self.db_manager = create_database_manager()
+            self.logger.info("Database manager initialized successfully")
+        except Exception as e:
+            self.logger.warning(f"Failed to initialize database manager: {e}")
+            self.db_manager = None
     
     def _register_default_indicators(self):
         """Register default indicator functions"""
@@ -79,8 +91,19 @@ class QuantServer:
                 try:
                     # Wait for request with timeout
                     if self.socket.poll(1000):  # 1 second timeout
-                        message = self.socket.recv_json(zmq.NOBLOCK)
-                        response = self._handle_message(message)
+                        raw_message = self.socket.recv_json(zmq.NOBLOCK)
+                        
+                        # Ensure message is a dictionary
+                        if not isinstance(raw_message, dict):
+                            error_response = {
+                                'status': 'error',
+                                'message': f'Invalid message format: expected dict, got {type(raw_message).__name__}',
+                                'timestamp': datetime.now().isoformat()
+                            }
+                            self.socket.send_json(error_response)
+                            continue
+                            
+                        response = self._handle_message(raw_message)
                         self.socket.send_json(response)
                     
                 except zmq.Again:
@@ -113,6 +136,12 @@ class QuantServer:
             self.socket.close()
         if self.context:
             self.context.term()
+        if self.db_manager:
+            try:
+                self.db_manager.close()
+                self.logger.info("Database manager closed")
+            except Exception as e:
+                self.logger.error(f"Error closing database manager: {e}")
         self.logger.info("Server cleanup completed")
     
     def _handle_message(self, message: Dict[str, Any]) -> Dict[str, Any]:
@@ -168,21 +197,29 @@ class QuantServer:
         try:
             kbar_data = message.get('data', {})
             symbol = kbar_data.get('symbol', '')
+            exchange = kbar_data.get('exchange', 'SH')  # Default to Shanghai exchange
+            raw_period = message.get('period', '1min')  # Default to 1-minute period
+            
+            # Convert period code to proper period string
+            period = self._convert_period_code_to_string(raw_period)
+            
             timestamp = kbar_data.get('timestamp', '')
-            open_price = kbar_data.get('open', 0)
-            high_price = kbar_data.get('high', 0)
-            low_price = kbar_data.get('low', 0)
-            close_price = kbar_data.get('close', 0)
+            open_price = round(kbar_data.get('open', 0), 3)
+            high_price = round(kbar_data.get('high', 0), 3)
+            low_price = round(kbar_data.get('low', 0), 3)
+            close_price = round(kbar_data.get('close', 0), 3)
             volume = kbar_data.get('volume', 0)
             
             # debug print
-            print(f"Received kbar data: symbol={symbol}, timestamp={timestamp}, "
-                  f"open={open_price:.2f}, high={high_price:.2f}, "
+            print(f"Received kbar data: symbol={symbol}, exchange={exchange}, raw_period={raw_period}, period={period}, "
+                  f"timestamp={timestamp}, open={open_price:.2f}, high={high_price:.2f}, "
                   f"low={low_price:.2f}, close={close_price:.2f}, volume={volume}")
 
-            # Process the kbar data (add your processing logic here)
+            # Process the kbar data
             processed_data = {
                 'symbol': symbol,
+                'exchange': exchange,
+                'period': period,
                 'timestamp': timestamp,
                 'ohlcv': {
                     'open': open_price,
@@ -193,6 +230,37 @@ class QuantServer:
                 },
                 'processed_time': datetime.now().isoformat()
             }
+            
+            # Store in database if available
+            db_status = "not_available"
+            if self.db_manager:
+                try:
+                    # Ensure stock exists in database
+                    stock_name = kbar_data.get('name', symbol)
+                    if not self.setup_stock_if_needed(symbol, exchange, stock_name):
+                        db_status = "error: failed to setup stock"
+                    else:
+                        # Prepare data in the format expected by the database
+                        db_kbar_data = {
+                            'timestamp': timestamp,
+                            'open': open_price,
+                            'high': high_price,
+                            'low': low_price,
+                            'close': close_price,
+                            'volume': volume
+                        }
+                        
+                        # Store the kbar data
+                        self.db_manager.store_kbar_data(symbol, exchange, period, db_kbar_data)
+                        db_status = "stored"
+                        self.logger.debug(f"Stored kbar data for {symbol}.{exchange} in database")
+                    
+                except Exception as db_error:
+                    db_status = f"error: {str(db_error)}"
+                    self.logger.error(f"Failed to store kbar data in database: {db_error}")
+            
+            # Add database status to response
+            processed_data['database_status'] = db_status
             
             return {
                 'status': 'success',
@@ -217,18 +285,23 @@ class QuantServer:
         try:
             series_data = message.get('data', [])
             symbol = message.get('symbol', '')
-            period = message.get('period', 0)  # Parse period from message
+            exchange = message.get('exchange', 'SH')  # Default to Shanghai exchange
+            raw_period = message.get('period', '1min')  # Default to 1-minute period
+            
+            # Convert period code to proper period string
+            period = self._convert_period_code_to_string(raw_period)
+            
             # debug print
-            print(f"Received kbar series: symbol={symbol}, period={period}")
+            print(f"Received kbar series: symbol={symbol}, exchange={exchange}, raw_period={raw_period}, period={period}, count={len(series_data)}")
 
             processed_series = []
             for kbar in series_data:
                 processed_kbar = {
                     'timestamp': kbar.get('timestamp', ''),
-                    'open': kbar.get('open', 0),
-                    'high': kbar.get('high', 0),
-                    'low': kbar.get('low', 0),
-                    'close': kbar.get('close', 0),
+                    'open': round(kbar.get('open', 0), 3),
+                    'high': round(kbar.get('high', 0), 3),
+                    'low': round(kbar.get('low', 0), 3),
+                    'close': round(kbar.get('close', 0), 3),
                     'volume': kbar.get('volume', 0)
                 }
                 processed_series.append(processed_kbar)
@@ -243,13 +316,48 @@ class QuantServer:
                       f"close={last_kbar['close']:.2f}, "
                       f"volume={last_kbar['volume']}")
 
+            # Store in database if available
+            db_status = "not_available"
+            if self.db_manager and processed_series:
+                try:
+                    # Ensure stock exists in database
+                    stock_name = message.get('name', symbol)
+                    if not self.setup_stock_if_needed(symbol, exchange, stock_name):
+                        db_status = "error: failed to setup stock"
+                    else:
+                        # Convert processed series to DataFrame for database storage
+                        df_data = []
+                        for kbar in processed_series:
+                            df_data.append({
+                                'timestamp': kbar['timestamp'],
+                                'open': kbar['open'],
+                                'high': kbar['high'],
+                                'low': kbar['low'],
+                                'close': kbar['close'],
+                                'volume': kbar['volume']
+                            })
+                        
+                        # Create DataFrame
+                        df = pd.DataFrame(df_data)
+                        
+                        # Store the kbar series data
+                        self.db_manager.store_kbar_data(symbol, exchange, period, df)
+                        db_status = "stored"
+                        self.logger.info(f"Stored {len(processed_series)} kbar records for {symbol}.{exchange} ({period}) in database")
+                    
+                except Exception as db_error:
+                    db_status = f"error: {str(db_error)}"
+                    self.logger.error(f"Failed to store kbar series in database: {db_error}")
+
             return {
                 'status': 'success',
                 'type': 'kbar_series_response',
                 'symbol': symbol,
-                'period': period,  # Include period in response
+                'exchange': exchange,
+                'period': period,
                 'data': processed_series,
                 'count': len(processed_series),
+                'database_status': db_status,
                 'timestamp': datetime.now().isoformat()
             }
             
@@ -380,15 +488,63 @@ class QuantServer:
                         'port': self.port,
                         'running': self.running,
                         'available_indicators': list(self.indicator_registry.keys()),
-                        'parameter_count': len(self.server_params)
+                        'parameter_count': len(self.server_params),
+                        'database_available': self.db_manager is not None
                     },
                     'timestamp': datetime.now().isoformat()
                 }
+                
+            elif control_type == 'database_stats':
+                if not self.db_manager:
+                    return {
+                        'status': 'error',
+                        'message': 'Database manager not available',
+                        'timestamp': datetime.now().isoformat()
+                    }
+                
+                try:
+                    stats = self.db_manager.get_database_stats()
+                    return {
+                        'status': 'success',
+                        'type': 'control_response',
+                        'database_stats': stats,
+                        'timestamp': datetime.now().isoformat()
+                    }
+                except Exception as e:
+                    return {
+                        'status': 'error',
+                        'message': f'Failed to get database stats: {str(e)}',
+                        'timestamp': datetime.now().isoformat()
+                    }
+                    
+            elif control_type == 'get_symbols':
+                if not self.db_manager:
+                    return {
+                        'status': 'error',
+                        'message': 'Database manager not available',
+                        'timestamp': datetime.now().isoformat()
+                    }
+                
+                try:
+                    symbols = self.db_manager.get_symbols_with_data()
+                    return {
+                        'status': 'success',
+                        'type': 'control_response',
+                        'symbols': symbols,
+                        'count': len(symbols),
+                        'timestamp': datetime.now().isoformat()
+                    }
+                except Exception as e:
+                    return {
+                        'status': 'error',
+                        'message': f'Failed to get symbols: {str(e)}',
+                        'timestamp': datetime.now().isoformat()
+                    }
             else:
                 return {
                     'status': 'error',
                     'message': f'Unknown control type: {control_type}',
-                    'available_controls': ['set_param', 'get_param', 'get_all_params', 'server_info'],
+                    'available_controls': ['set_param', 'get_param', 'get_all_params', 'server_info', 'database_stats', 'get_symbols'],
                     'timestamp': datetime.now().isoformat()
                 }
                 
@@ -577,6 +733,89 @@ class QuantServer:
         """
         self.indicator_registry[name] = function
         self.logger.info(f"Registered indicator: {name}")
+    
+    def setup_stock_if_needed(self, symbol: str, exchange: str, name: Optional[str] = None) -> bool:
+        """
+        Setup stock in database if it doesn't exist
+        
+        Args:
+            symbol: Stock symbol
+            exchange: Exchange code
+            name: Stock name (optional, defaults to symbol if not provided)
+            
+        Returns:
+            True if stock was setup successfully or already exists, False otherwise
+        """
+        if not self.db_manager:
+            self.logger.warning("Database manager not available for stock setup")
+            return False
+            
+        try:
+            # Check if stock already exists
+            stock_info = self.db_manager.get_stock_info(symbol, exchange)
+            if stock_info:
+                self.logger.debug(f"Stock {symbol}.{exchange} already exists in database")
+                return True
+            
+            # Setup new stock
+            stock_name = name if name is not None else symbol
+            stock_id = self.db_manager.setup_stock(symbol, exchange, stock_name)
+            self.logger.info(f"Setup new stock {symbol}.{exchange} with ID {stock_id}")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Failed to setup stock {symbol}.{exchange}: {e}")
+            return False
+    
+    def _convert_period_code_to_string(self, period: Union[str, int]) -> str:
+        """
+        Convert period code to standard period string format.
+        This is equivalent to the C++ ConvertPeriodToStr function.
+        
+        Args:
+            period: Period code (as string or int) or period string to convert
+            
+        Returns:
+            Standard period string (e.g., "1min", "5min", "daily", etc.)
+        """
+        # If it's already a proper period string, return as-is
+        if isinstance(period, str):
+            if period in ["1min", "5min", "15min", "30min", "1hour", "daily", "weekly", "monthly", "yearly", "quarterly", "5sec", "1sec"]:
+                return period
+        
+        # Try to convert to integer code
+        try:
+            if isinstance(period, str):
+                period_code = int(period) - 1  # Convert to 0-based index like C++ version
+            else:
+                period_code = int(period) - 1
+        except (ValueError, TypeError):
+            # If conversion fails, default to daily
+            self.logger.warning(f"Unknown period format: {period}, defaulting to daily")
+            return "daily"
+        
+        # Convert period code to standard period string
+        # Based on TDX period codes: 0-13 representing different time periods
+        period_mapping = {
+            0: "1min",      # M1 - 1 minute
+            1: "5min",      # M5 - 5 minutes  
+            2: "15min",     # M15 - 15 minutes
+            3: "30min",     # M30 - 30 minutes
+            4: "1hour",     # H1 - 1 hour
+            5: "daily",     # Day - daily
+            6: "weekly",    # Week - weekly
+            7: "monthly",   # Month - monthly
+            8: "1min",      # M-Min - multi-minute (default to 1min)
+            9: "daily",     # M-Day - multi-day (default to daily)
+            10: "quarterly", # Season - quarterly
+            11: "yearly",   # Year - yearly
+            12: "5sec",     # Sec5 - 5 seconds
+            13: "1sec",     # M-Sec - multi-second (default to 1sec)
+        }
+        
+        result = period_mapping.get(period_code, "daily")
+        self.logger.debug(f"Converted period code {period} to {result}")
+        return result
 
 
 def main():

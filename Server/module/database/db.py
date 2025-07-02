@@ -15,7 +15,7 @@ import pandas as pd
 
 # Make TDengine import optional
 try:
-    from kbar_db import KbarDatabase as TDengineKbarDatabase
+    from .kbar_db import KbarDatabase as TDengineKbarDatabase
     TDENGINE_AVAILABLE = True
 except ImportError as e:
     logging.warning(f"TDengine not available: {e}")
@@ -24,14 +24,14 @@ except ImportError as e:
 
 # Import SQLite K-bar database
 try:
-    from kbar_db_sqlite import KbarDatabase as SQLiteKbarDatabase
+    from .kbar_db_sqlite import KbarDatabase as SQLiteKbarDatabase
     SQLITE_KBAR_AVAILABLE = True
 except ImportError as e:
     logging.warning(f"SQLite K-bar database not available: {e}")
     SQLiteKbarDatabase = None
     SQLITE_KBAR_AVAILABLE = False
 
-from meta_db import MetaDatabase
+from .meta_db import MetaDatabase
 
 
 class DatabaseManager:
