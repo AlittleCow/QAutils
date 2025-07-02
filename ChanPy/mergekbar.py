@@ -7,8 +7,9 @@ The merging process combines two consecutive kbars based on inclusion relationsh
 
 import logging
 from typing import List, Optional, TYPE_CHECKING
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
+from .chantypes import KBarRelationship, get_kbar_objects_relationship
 
 if TYPE_CHECKING:
     from .chan import Kbar
@@ -32,12 +33,10 @@ class MergedKbar:
     close: float
     volume: int
     original_count: int = 1  # Number of original kbars merged into this one
-    original_kbars: List['Kbar'] = None  # List of original raw kbars that were merged
+    original_kbars: List['Kbar'] = field(default_factory=list)  # List of original raw kbars that were merged
     
     def __post_init__(self):
         """Validate merged K-bar data after initialization"""
-        if self.original_kbars is None:
-            self.original_kbars = []
         if self.high < max(self.open, self.close) or self.low > min(self.open, self.close):
             raise ValueError("Invalid merged K-bar data: high/low inconsistent with open/close")
 
@@ -58,33 +57,65 @@ class KbarMerger:
         """
         Check if two consecutive kbars can be merged
         
+        Two kbars can be merged if they have a containment relationship.
+        This excludes overlap-only and completely separated relationships.
+        
         Args:
             kbar1: First kbar (earlier in time)
             kbar2: Second kbar (later in time)
             
         Returns:
-            True if kbars can be merged, False otherwise
+            True if kbars can be merged (containment relationship), False otherwise
         """
-        # Check if kbar2 is completely contained within kbar1
-        kbar2_in_kbar1 = (kbar1.high >= kbar2.high and kbar1.low <= kbar2.low)
-        
-        # Check if kbar1 is completely contained within kbar2
-        kbar1_in_kbar2 = (kbar2.high >= kbar1.high and kbar2.low <= kbar1.low)
-        
-        return kbar2_in_kbar1 or kbar1_in_kbar2
+        relationship = self._get_merge_relationship(kbar1, kbar2)
+        return relationship is not None
     
-    def merge_two_kbars(self, kbar1: 'Kbar', kbar2: 'Kbar') -> MergedKbar:
+    def _get_merge_relationship(self, kbar1: 'Kbar', kbar2: 'Kbar') -> Optional[KBarRelationship]:
+        """
+        Get the relationship between two kbars and determine if they can be merged.
+        
+        Args:
+            kbar1: First kbar (earlier in time)
+            kbar2: Second kbar (later in time)
+            
+        Returns:
+            KBarRelationship if kbars can be merged, None if they cannot be merged
+        """
+        # Get the relationship between the two kbars
+        relationship = get_kbar_objects_relationship(kbar1, kbar2)
+        
+        # Define non-mergeable relationships (overlap and separation)
+        non_mergeable_relationships = {
+            KBarRelationship.UP_OVERLAP,
+            KBarRelationship.DOWN_OVERLAP,
+            KBarRelationship.K1_ABOVE_K2,
+            KBarRelationship.K1_BELOW_K2
+        }
+        
+        # If it's not an overlap or separation relationship, it's a containment relationship
+        # which means the kbars can be merged
+        can_merge_result = relationship not in non_mergeable_relationships
+        
+        self.logger.debug(f"Kbar relationship: {relationship.value} - Can merge: {can_merge_result}")
+        if can_merge_result:
+            self.logger.debug(f"Kbar1: {kbar1}")
+            self.logger.debug(f"Kbar2: {kbar2}")
+
+        return relationship if can_merge_result else None
+    
+    def merge_two_kbars(self, kbar1: 'Kbar', kbar2: 'Kbar', skip_merge_check: bool = False) -> MergedKbar:
         """
         Merge two consecutive kbars
         
         Args:
             kbar1: First kbar (earlier in time)
             kbar2: Second kbar (later in time)
+            skip_merge_check: If True, skip the merge compatibility check (for performance when already verified)
             
         Returns:
             Merged kbar
         """
-        if not self.can_merge(kbar1, kbar2):
+        if not skip_merge_check and not self.can_merge(kbar1, kbar2):
             raise ValueError("Cannot merge kbars: no inclusion relationship")
         
         # Determine the merged kbar properties
@@ -145,17 +176,20 @@ class KbarMerger:
             if i + 1 < len(kbars):
                 next_kbar = kbars[i + 1]
                 
-                if self.can_merge(current_kbar, next_kbar):
-                    # Merge the two kbars
-                    merged = self.merge_two_kbars(current_kbar, next_kbar)
+                # Check relationship once and reuse result
+                relationship = self._get_merge_relationship(current_kbar, next_kbar)
+                if relationship is not None:
+                    # Merge the two kbars (skip merge check since we already verified)
+                    merged = self.merge_two_kbars(current_kbar, next_kbar, skip_merge_check=True)
                     
                     # Continue merging with subsequent kbars if possible
                     j = i + 2
                     while j < len(kbars):
                         temp_kbar = self._merged_to_kbar(merged)
-                        if self.can_merge(temp_kbar, kbars[j]):
-                            # Merge with next kbar
-                            merged = self._merge_merged_with_kbar(merged, kbars[j])
+                        next_relationship = self._get_merge_relationship(temp_kbar, kbars[j])
+                        if next_relationship is not None:
+                            # Merge with next kbar (skip merge check since we already verified)
+                            merged = self._merge_merged_with_kbar(merged, kbars[j], skip_merge_check=True)
                             j += 1
                         else:
                             break
@@ -208,10 +242,10 @@ class KbarMerger:
             volume=merged_kbar.volume
         )
     
-    def _merge_merged_with_kbar(self, merged_kbar: MergedKbar, kbar: 'Kbar') -> MergedKbar:
+    def _merge_merged_with_kbar(self, merged_kbar: MergedKbar, kbar: 'Kbar', skip_merge_check: bool = False) -> MergedKbar:
         """Merge a MergedKbar with a regular Kbar"""
         temp_kbar = self._merged_to_kbar(merged_kbar)
-        if not self.can_merge(temp_kbar, kbar):
+        if not skip_merge_check and not self.can_merge(temp_kbar, kbar):
             raise ValueError("Cannot merge: no inclusion relationship")
         
         return MergedKbar(

@@ -12,29 +12,7 @@ from datetime import datetime
 from dataclasses import dataclass, field
 from enum import Enum
 
-from chantypes import Kbar, FractionalPoint, Pen, Segment, CentralArea, Direction, PenType
-
-@dataclass
-class CentralArea:
-    """Central area structure in Chan analysis (中枢)"""
-    high: float
-    low: float
-    start_time: str
-    end_time: str
-    segments: List[Segment] = field(default_factory=list)
-    level: int = 1  # 中枢级别
-    confirmed: bool = False
-    
-    @property
-    def range_height(self) -> float:
-        """Height of central area"""
-        return self.high - self.low
-    
-    @property
-    def center_price(self) -> float:
-        """Center price of central area"""
-        return (self.high + self.low) / 2
-
+from .chantypes import Kbar, FractionalPoint, Pen, Segment, CentralArea, Direction, PenType
 
 class ChanIndicator:
     """

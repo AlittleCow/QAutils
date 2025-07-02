@@ -37,6 +37,19 @@ class Kbar:
         """Validate K-bar data after initialization"""
         if self.high < max(self.open, self.close) or self.low > min(self.open, self.close):
             raise ValueError("Invalid K-bar data: high/low inconsistent with open/close")
+    
+    def __str__(self) -> str:
+        """String representation for debugging"""
+        direction = "↑" if self.close > self.open else "↓" if self.close < self.open else "→"
+        body_size = abs(self.close - self.open)
+        range_size = self.high - self.low
+        return (f"Kbar({self.timestamp} {direction} "
+                f"O:{self.open:.2f} H:{self.high:.2f} L:{self.low:.2f} C:{self.close:.2f} "
+                f"V:{self.volume} Body:{body_size:.2f} Range:{range_size:.2f})")
+    
+    def __repr__(self) -> str:
+        """Detailed representation for debugging"""
+        return self.__str__()
 
 
 @dataclass
@@ -89,6 +102,26 @@ class Segment:
                 self.direction = Direction.DOWN
 
 
+@dataclass
+class CentralArea:
+    """Central area structure in Chan analysis (中枢)"""
+    high: float
+    low: float
+    start_time: str
+    end_time: str
+    segments: List[Segment] = field(default_factory=list)
+    level: int = 1  # 中枢级别
+    confirmed: bool = False
+    
+    @property
+    def range_height(self) -> float:
+        """Height of central area"""
+        return self.high - self.low
+    
+    @property
+    def center_price(self) -> float:
+        """Center price of central area"""
+        return (self.high + self.low) / 2
 
 
 class KbarShape(Enum):
