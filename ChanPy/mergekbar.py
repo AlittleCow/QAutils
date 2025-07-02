@@ -9,17 +9,10 @@ import logging
 from typing import List, Optional, TYPE_CHECKING
 from dataclasses import dataclass, field
 from enum import Enum
-from .chantypes import KBarRelationship, get_kbar_objects_relationship
+from .chantypes import KBarRelationship, get_kbar_objects_relationship, Direction
 
 if TYPE_CHECKING:
     from .chan import Kbar
-
-
-class MergeDirection(Enum):
-    """Direction for kbar merging"""
-    UP = 1
-    DOWN = -1
-    UNKNOWN = 0
 
 
 @dataclass
@@ -125,13 +118,17 @@ class KbarMerger:
 
         return relationship if can_merge_result else None
     
-    def merge_two_kbars(self, kbar1: 'Kbar', kbar2: 'Kbar', skip_merge_check: bool = False) -> MergedKbar:
+    def merge_two_kbars(self, kbar1: 'Kbar', kbar2: 'Kbar', merge_direction: Direction, skip_merge_check: bool = False) -> MergedKbar:
         """
         Merge two consecutive kbars
         
         Args:
             kbar1: First kbar (earlier in time)
             kbar2: Second kbar (later in time)
+            merge_direction: Direction for merging (UP, DOWN, or UNKNOWN)
+                           - For DOWN merge: low = min(low1, low2), high = min(high1, high2)
+                           - For UP merge: low = max(low1, low2), high = max(high1, high2)
+                           - For UNKNOWN: uses traditional merge (max high, min low)
             skip_merge_check: If True, skip the merge compatibility check (for performance when already verified)
             
         Returns:
@@ -140,9 +137,19 @@ class KbarMerger:
         if not skip_merge_check and not self.can_merge(kbar1, kbar2):
             raise ValueError("Cannot merge kbars: no inclusion relationship")
         
-        # Determine the merged kbar properties
-        merged_high = max(kbar1.high, kbar2.high)
-        merged_low = min(kbar1.low, kbar2.low)
+        # Determine the merged kbar properties based on merge direction
+        if merge_direction == Direction.DOWN:
+            # For down merge: min of both highs and lows
+            merged_high = min(kbar1.high, kbar2.high)
+            merged_low = min(kbar1.low, kbar2.low)
+        elif merge_direction == Direction.UP:
+            # For up merge: max of both highs and lows
+            merged_high = max(kbar1.high, kbar2.high)
+            merged_low = max(kbar1.low, kbar2.low)
+        else:
+            # For UNKNOWN or traditional merge: max high, min low
+            merged_high = max(kbar1.high, kbar2.high)
+            merged_low = min(kbar1.low, kbar2.low)
         
         # Open is from the first kbar, close is from the second kbar
         merged_open = kbar1.open
@@ -201,8 +208,11 @@ class KbarMerger:
                 # Check relationship once and reuse result
                 relationship = self._get_merge_relationship(current_kbar, next_kbar)
                 if relationship is not None:
+                    # Determine merge direction
+                    merge_direction = self._determine_merge_direction(current_kbar, next_kbar)
+                    
                     # Merge the two kbars (skip merge check since we already verified)
-                    merged = self.merge_two_kbars(current_kbar, next_kbar, skip_merge_check=True)
+                    merged = self.merge_two_kbars(current_kbar, next_kbar, merge_direction, skip_merge_check=True)
                     
                     # print the merged kbar
                     self.logger.debug(f"Merged kbar: {merged}")
@@ -214,8 +224,11 @@ class KbarMerger:
                         temp_kbar = self._merged_to_kbar(merged)
                         next_relationship = self._get_merge_relationship(temp_kbar, kbars[j])
                         if next_relationship is not None:
+                            # Determine merge direction for subsequent merge
+                            subsequent_merge_direction = self._determine_merge_direction(temp_kbar, kbars[j])
+                            
                             # Merge with next kbar (skip merge check since we already verified)
-                            merged = self._merge_merged_with_kbar(merged, kbars[j], skip_merge_check=True)
+                            merged = self._merge_merged_with_kbar(merged, kbars[j], subsequent_merge_direction, skip_merge_check=True)
                             j += 1
                         else:
                             break
@@ -268,24 +281,49 @@ class KbarMerger:
             volume=merged_kbar.volume
         )
     
-    def _merge_merged_with_kbar(self, merged_kbar: MergedKbar, kbar: 'Kbar', skip_merge_check: bool = False) -> MergedKbar:
-        """Merge a MergedKbar with a regular Kbar"""
+    def _merge_merged_with_kbar(self, merged_kbar: MergedKbar, kbar: 'Kbar', merge_direction: Direction = Direction.UNKNOWN, skip_merge_check: bool = False) -> MergedKbar:
+        """
+        Merge a MergedKbar with a regular Kbar
+        
+        Args:
+            merged_kbar: The existing merged kbar
+            kbar: The kbar to merge with
+            merge_direction: Direction for merging (UP, DOWN, or UNKNOWN)
+            skip_merge_check: If True, skip the merge compatibility check
+            
+        Returns:
+            New MergedKbar with the kbar merged in
+        """
         temp_kbar = self._merged_to_kbar(merged_kbar)
         if not skip_merge_check and not self.can_merge(temp_kbar, kbar):
             raise ValueError("Cannot merge: no inclusion relationship")
         
+        # Apply merge direction logic
+        if merge_direction == Direction.DOWN:
+            # For down merge: min of both highs and lows
+            new_high = min(merged_kbar.high, kbar.high)
+            new_low = min(merged_kbar.low, kbar.low)
+        elif merge_direction == Direction.UP:
+            # For up merge: max of both highs and lows
+            new_high = max(merged_kbar.high, kbar.high)
+            new_low = max(merged_kbar.low, kbar.low)
+        else:
+            # For UNKNOWN or traditional merge: max high, min low
+            new_high = max(merged_kbar.high, kbar.high)
+            new_low = min(merged_kbar.low, kbar.low)
+
         return MergedKbar(
             timestamp_start=merged_kbar.timestamp_start,
             timestamp_end=kbar.timestamp,
             open=merged_kbar.open,
-            high=max(merged_kbar.high, kbar.high),
-            low=min(merged_kbar.low, kbar.low),
+            high=new_high,
+            low=new_low,
             close=kbar.close,
             volume=merged_kbar.volume + kbar.volume,
             original_count=merged_kbar.original_count + 1
         )
     
-    def get_merge_direction(self, merged_kbar: MergedKbar) -> MergeDirection:
+    def get_merge_direction(self, merged_kbar: MergedKbar) -> Direction:
         """
         Determine the direction of a merged kbar
         
@@ -293,14 +331,14 @@ class KbarMerger:
             merged_kbar: The merged kbar to analyze
             
         Returns:
-            Direction of the merged kbar
+            Direction: The direction of the merged kbar
         """
         if merged_kbar.close > merged_kbar.open:
-            return MergeDirection.UP
+            return Direction.UP
         elif merged_kbar.close < merged_kbar.open:
-            return MergeDirection.DOWN
+            return Direction.DOWN
         else:
-            return MergeDirection.UNKNOWN
+            return Direction.UNKNOWN
     
     def get_merged_kbars(self) -> List[MergedKbar]:
         """Get the list of merged kbars"""
@@ -309,4 +347,24 @@ class KbarMerger:
     def clear(self):
         """Clear all merged kbars"""
         self.merged_kbars.clear()
-        self.logger.debug("Cleared all merged kbars") 
+        self.logger.debug("Cleared all merged kbars")
+    
+    def _determine_merge_direction(self, kbar1: 'Kbar', kbar2: 'Kbar') -> Direction:
+        """
+        Determine the merge direction based on the relationship between two kbars
+        
+        Args:
+            kbar1: First kbar (earlier in time)
+            kbar2: Second kbar (later in time)
+            
+        Returns:
+            Direction: The merge direction to use
+        """
+        # Simple heuristic: if both kbars are generally trending in the same direction,
+        # use that direction. Otherwise, use UNKNOWN for traditional merge behavior.
+        
+        kbar1_direction = Direction.UP if kbar2.close > kbar1.close else Direction.DOWN if kbar2.close < kbar1.close else Direction.UNKNOWN
+        
+        # You can add more sophisticated logic here based on your specific requirements
+        # For now, return UNKNOWN to maintain existing behavior
+        return Direction.UNKNOWN 
