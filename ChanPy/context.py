@@ -80,7 +80,7 @@ class ChanContext:
         if db_manager is None:
             try:
                 self.db_manager = create_database_manager()
-                self.logger.info("Created default database manager for Chan context")
+                self.logger.debug("Created default database manager for Chan context")
             except Exception as e:
                 self.logger.warning(f"Failed to create database manager: {e}")
                 self.db_manager = None

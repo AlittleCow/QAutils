@@ -57,10 +57,10 @@ class KbarDatabase:
             # Enable foreign keys
             self.cursor.execute("PRAGMA foreign_keys=ON")
             
-            self.logger.info(f"Connected to SQLite database: {self.database_path}")
+            self.logger.debug(f"Connected to SQLite database: {self.database_path}")
             
-            # Create database schema
-            self._create_database()
+            # Create tables
+            self._create_tables()
             
         except Exception as e:
             self.logger.error(f"Failed to connect to SQLite: {str(e)}")
@@ -83,57 +83,51 @@ class KbarDatabase:
             # Try to convert to string
             return str(timestamp)
             
-    def _create_database(self):
-        """Create database tables if they don't exist."""
-        if not self.cursor or not self.conn:
+    def _create_tables(self):
+        """Create database tables if they don't exist"""
+        if not self.conn:
             raise RuntimeError("Database connection not established")
             
         try:
-            # Create symbols table to track all symbols
-            self.cursor.execute("""
-                CREATE TABLE IF NOT EXISTS symbols (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    symbol TEXT NOT NULL,
-                    exchange TEXT NOT NULL,
-                    period TEXT NOT NULL,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    UNIQUE(symbol, exchange, period)
-                )
-            """)
+            with self.conn:
+                # Create kbar table with all necessary columns
+                self.conn.execute('''
+                    CREATE TABLE IF NOT EXISTS kbar_data (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        symbol TEXT NOT NULL,
+                        exchange TEXT NOT NULL,
+                        period TEXT NOT NULL,
+                        ts TEXT NOT NULL,
+                        open REAL NOT NULL,
+                        high REAL NOT NULL,
+                        low REAL NOT NULL,
+                        close REAL NOT NULL,
+                        volume INTEGER NOT NULL,
+                        amount REAL DEFAULT 0,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        UNIQUE(symbol, exchange, period, ts)
+                    )
+                ''')
+                
+                # Create index for faster queries
+                self.conn.execute('''
+                    CREATE INDEX IF NOT EXISTS idx_kbar_symbol_exchange_period_ts 
+                    ON kbar_data (symbol, exchange, period, ts)
+                ''')
+                
+                # Create index for symbol/exchange queries
+                self.conn.execute('''
+                    CREATE INDEX IF NOT EXISTS idx_kbar_symbol_exchange 
+                    ON kbar_data (symbol, exchange)
+                ''')
+                
+                # Create index for time-based queries
+                self.conn.execute('''
+                    CREATE INDEX IF NOT EXISTS idx_kbar_ts 
+                    ON kbar_data (ts)
+                ''')
             
-            # Create main kbar_data table
-            self.cursor.execute("""
-                CREATE TABLE IF NOT EXISTS kbar_data (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    symbol TEXT NOT NULL,
-                    exchange TEXT NOT NULL,
-                    period TEXT NOT NULL,
-                    ts TEXT NOT NULL,
-                    open REAL,
-                    high REAL,
-                    low REAL,
-                    close REAL,
-                    volume INTEGER,
-                    amount REAL,
-                    pre_close REAL,
-                    change_rate REAL,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    UNIQUE(symbol, exchange, period, ts)
-                )
-            """)
-            
-            # Create indexes for efficient querying
-            indexes = [
-                "CREATE INDEX IF NOT EXISTS idx_kbar_symbol_exchange_period ON kbar_data(symbol, exchange, period)",
-                "CREATE INDEX IF NOT EXISTS idx_kbar_ts ON kbar_data(ts)",
-                "CREATE INDEX IF NOT EXISTS idx_kbar_symbol_ts ON kbar_data(symbol, exchange, period, ts)",
-            ]
-            
-            for index_sql in indexes:
-                self.cursor.execute(index_sql)
-            
-            self.conn.commit()
-            self.logger.info("Database schema created successfully")
+            self.logger.debug("Database schema created successfully")
             
         except Exception as e:
             self.logger.error(f"Failed to create database schema: {str(e)}")

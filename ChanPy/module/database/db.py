@@ -101,7 +101,7 @@ class DatabaseManager:
             
             if meta_config and meta_enabled:
                 self.meta_db = MetaDatabase(meta_config)
-                self.logger.info("Connected to SQLite for meta data")
+                self.logger.debug("Connected to SQLite for meta data")
             elif not meta_enabled:
                 self.logger.info("Meta database is disabled in configuration")
             else:
@@ -115,7 +115,7 @@ class DatabaseManager:
                 if CHAN_DB_AVAILABLE and ChanDatabase:
                     try:
                         self.chan_db = ChanDatabase(chan_config)
-                        self.logger.info("Connected to Chan database")
+                        self.logger.debug("Connected to Chan database")
                     except Exception as e:
                         self.logger.warning(f"Failed to connect to Chan database: {e}")
                         self.logger.warning("Continuing without Chan database (Chan line data will not be available)")
@@ -143,7 +143,7 @@ class DatabaseManager:
         if TDENGINE_AVAILABLE and TDengineKbarDatabase:
             try:
                 self.kbar_db = TDengineKbarDatabase(tdengine_config)
-                self.logger.info("Connected to TDengine for K-bar data")
+                self.logger.debug("Connected to TDengine for K-bar data")
             except Exception as e:
                 self.logger.warning(f"Failed to connect to TDengine: {e}")
                 self.logger.warning("Continuing without TDengine (K-bar data will not be available)")
@@ -166,7 +166,7 @@ class DatabaseManager:
         if SQLITE_KBAR_AVAILABLE and SQLiteKbarDatabase:
             try:
                 self.kbar_db = SQLiteKbarDatabase(sqlite_config)
-                self.logger.info("Connected to SQLite for K-bar data")
+                self.logger.debug("Connected to SQLite for K-bar data")
             except Exception as e:
                 self.logger.warning(f"Failed to connect to SQLite K-bar database: {e}")
                 self.logger.warning("Continuing without SQLite K-bar database (K-bar data will not be available)")

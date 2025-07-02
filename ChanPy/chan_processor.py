@@ -110,7 +110,7 @@ class ChanProcessor:
             except Exception as e:
                 self.logger.warning(f"Failed to initialize from database: {e}")
         
-        self.logger.info("ChanProcessor initialized with all components and context management")
+        self.logger.debug("ChanProcessor initialized with all components and context management")
     
     def process_kbars(self, kbars: List[Kbar]) -> Dict[str, Any]:
         """
@@ -127,6 +127,7 @@ class ChanProcessor:
         
         try:
             # Update context with raw kbars
+            self.logger.info(f"Updating context with {len(kbars)} raw kbars")
             if self.context and all([self.symbol, self.exchange, self.period]):
                 # Type guard: we know these are not None after the check above
                 assert self.symbol is not None
@@ -144,100 +145,101 @@ class ChanProcessor:
                 'compression_ratio': len(self.merged_kbars) / len(kbars) if kbars else 0
             }
             
-            # Update context with merged kbars
-            if self.context and all([self.symbol, self.exchange, self.period]):
-                # Type guard: we know these are not None after the check above
-                assert self.symbol is not None
-                assert self.exchange is not None
-                assert self.period is not None
-                
-                self.context.update_merged_kbars(self.merged_kbars, self.symbol, self.exchange, self.period)
-            
-            if len(self.merged_kbars) < 3:
-                self.logger.warning("Insufficient merged kbars for fractal analysis")
-                return self._build_results(results, "Insufficient merged kbars")
 
-            # Step 2: Check consecutive merged kbars for fractals
-            self.logger.info("Step 2: Identifying fractals from merged kbars")  
-            self.fractals = self.fractal_identifier.process_merged_kbars(self.merged_kbars)
-            results['step2_fractals'] = {
-                'total_fractals': len(self.fractals),
-                'top_fractals': len(self.fractal_identifier.get_top_fractals()),
-                'bottom_fractals': len(self.fractal_identifier.get_bottom_fractals()),
-                'fractal_summary': self.fractal_identifier.get_fractal_summary()
-            }
-            
-            # Update context with fractals
-            if self.context and all([self.symbol, self.exchange, self.period]):
-                # Type guard: we know these are not None after the check above
-                assert self.symbol is not None
-                assert self.exchange is not None
-                assert self.period is not None
+            # # Update context with merged kbars
+            # if self.context and all([self.symbol, self.exchange, self.period]):
+            #     # Type guard: we know these are not None after the check above
+            #     assert self.symbol is not None
+            #     assert self.exchange is not None
+            #     assert self.period is not None
                 
-                self.context.update_fractals(self.fractals, self.symbol, self.exchange, self.period)
+            #     self.context.update_merged_kbars(self.merged_kbars, self.symbol, self.exchange, self.period)
             
-            if len(self.fractals) < 2:
-                self.logger.warning("Insufficient fractals for pen analysis")
-                return self._build_results(results, "Insufficient fractals")
+            # if len(self.merged_kbars) < 3:
+            #     self.logger.warning("Insufficient merged kbars for fractal analysis")
+            #     return self._build_results(results, "Insufficient merged kbars")
 
-            # Step 3: Process raw kbars from fractal to fractal to identify chanpen
-            self.logger.info("Step 3: Creating pens from fractals with raw kbar validation")
-            self.pen_processor.set_raw_kbars(kbars)
-            self.pens = self.pen_processor.process_fractals(self.fractals)
-            results['step3_pens'] = {
-                'total_pens': len(self.pens),
-                'upward_pens': len(self.pen_processor.get_upward_pens()),
-                'downward_pens': len(self.pen_processor.get_downward_pens()),
-                'pen_statistics': self.pen_processor.get_pen_statistics()
-            }
+            # # Step 2: Check consecutive merged kbars for fractals
+            # self.logger.info("Step 2: Identifying fractals from merged kbars")  
+            # self.fractals = self.fractal_identifier.process_merged_kbars(self.merged_kbars)
+            # results['step2_fractals'] = {
+            #     'total_fractals': len(self.fractals),
+            #     'top_fractals': len(self.fractal_identifier.get_top_fractals()),
+            #     'bottom_fractals': len(self.fractal_identifier.get_bottom_fractals()),
+            #     'fractal_summary': self.fractal_identifier.get_fractal_summary()
+            # }
             
-            # Update context with pens
-            if self.context and all([self.symbol, self.exchange, self.period]):
-                # Type guard: we know these are not None after the check above
-                assert self.symbol is not None
-                assert self.exchange is not None
-                assert self.period is not None
+            # # Update context with fractals
+            # if self.context and all([self.symbol, self.exchange, self.period]):
+            #     # Type guard: we know these are not None after the check above
+            #     assert self.symbol is not None
+            #     assert self.exchange is not None
+            #     assert self.period is not None
                 
-                self.context.update_pens(self.pens, self.symbol, self.exchange, self.period)
+            #     self.context.update_fractals(self.fractals, self.symbol, self.exchange, self.period)
             
-            if len(self.pens) < 3:
-                self.logger.warning("Insufficient pens for line analysis")
-                return self._build_results(results, "Insufficient pens")
+            # if len(self.fractals) < 2:
+            #     self.logger.warning("Insufficient fractals for pen analysis")
+            #     return self._build_results(results, "Insufficient fractals")
 
-            # Step 4: Process chanpen breaking and chanline formation
-            self.logger.info("Step 4: Forming lines and analyzing breaking patterns")
-            self.lines = self.line_processor.process_pens(self.pens)
+            # # Step 3: Process raw kbars from fractal to fractal to identify chanpen
+            # self.logger.info("Step 3: Creating pens from fractals with raw kbar validation")
+            # self.pen_processor.set_raw_kbars(kbars)
+            # self.pens = self.pen_processor.process_fractals(self.fractals)
+            # results['step3_pens'] = {
+            #     'total_pens': len(self.pens),
+            #     'upward_pens': len(self.pen_processor.get_upward_pens()),
+            #     'downward_pens': len(self.pen_processor.get_downward_pens()),
+            #     'pen_statistics': self.pen_processor.get_pen_statistics()
+            # }
             
-            # Analyze pen breaking for existing lines
-            if self.lines:
-                for line in self.lines:
-                    recent_pens = self.pens[-3:] if len(self.pens) >= 3 else self.pens
-                    break_type = self.line_processor.analyze_line_breaking(line, recent_pens)
-                    if break_type.value > 0:  # Some breaking detected
-                        self.logger.info(f"Line breaking detected: {break_type.name} for "
-                                       f"{line.direction.name} line")
+            # # Update context with pens
+            # if self.context and all([self.symbol, self.exchange, self.period]):
+            #     # Type guard: we know these are not None after the check above
+            #     assert self.symbol is not None
+            #     assert self.exchange is not None
+            #     assert self.period is not None
                 
-                # Update global line status
-                recent_pens = self.pens[-5:] if len(self.pens) >= 5 else self.pens
-                self.line_processor.update_global_line_status(recent_pens)
+            #     self.context.update_pens(self.pens, self.symbol, self.exchange, self.period)
             
-            # Update context with lines (with auto-save to database)
-            if self.context and all([self.symbol, self.exchange, self.period]):
-                # Type guard: we know these are not None after the check above
-                assert self.symbol is not None
-                assert self.exchange is not None
-                assert self.period is not None
+            # if len(self.pens) < 3:
+            #     self.logger.warning("Insufficient pens for line analysis")
+            #     return self._build_results(results, "Insufficient pens")
+
+            # # Step 4: Process chanpen breaking and chanline formation
+            # self.logger.info("Step 4: Forming lines and analyzing breaking patterns")
+            # self.lines = self.line_processor.process_pens(self.pens)
+            
+            # # Analyze pen breaking for existing lines
+            # if self.lines:
+            #     for line in self.lines:
+            #         recent_pens = self.pens[-3:] if len(self.pens) >= 3 else self.pens
+            #         break_type = self.line_processor.analyze_line_breaking(line, recent_pens)
+            #         if break_type.value > 0:  # Some breaking detected
+            #             self.logger.info(f"Line breaking detected: {break_type.name} for "
+            #                            f"{line.direction.name} line")
                 
-                self.context.update_lines(self.lines, self.symbol, self.exchange, self.period, save_to_db=True)
+            #     # Update global line status
+            #     recent_pens = self.pens[-5:] if len(self.pens) >= 5 else self.pens
+            #     self.line_processor.update_global_line_status(recent_pens)
             
-            results['step4_lines'] = {
-                'total_lines': len(self.lines),
-                'upward_lines': len(self.line_processor.get_upward_lines()),
-                'downward_lines': len(self.line_processor.get_downward_lines()),
-                'broken_lines': len(self.line_processor.get_broken_lines()),
-                'global_line_info': self._get_global_line_info(),
-                'line_statistics': self.line_processor.get_line_statistics()
-            }
+            # # Update context with lines (with auto-save to database)
+            # if self.context and all([self.symbol, self.exchange, self.period]):
+            #     # Type guard: we know these are not None after the check above
+            #     assert self.symbol is not None
+            #     assert self.exchange is not None
+            #     assert self.period is not None
+                
+            #     self.context.update_lines(self.lines, self.symbol, self.exchange, self.period, save_to_db=True)
+            
+            # results['step4_lines'] = {
+            #     'total_lines': len(self.lines),
+            #     'upward_lines': len(self.line_processor.get_upward_lines()),
+            #     'downward_lines': len(self.line_processor.get_downward_lines()),
+            #     'broken_lines': len(self.line_processor.get_broken_lines()),
+            #     'global_line_info': self._get_global_line_info(),
+            #     'line_statistics': self.line_processor.get_line_statistics()
+            # }
             
             return self._build_results(results, "Success")
             

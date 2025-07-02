@@ -56,7 +56,7 @@ class MetaDatabase:
             # Enable foreign keys
             self.cursor.execute("PRAGMA foreign_keys = ON")
             
-            self.logger.info(f"Connected to SQLite database: {self.database_path}")
+            self.logger.debug(f"Connected to SQLite database: {self.database_path}")
             
             # Create tables
             self._create_tables()
@@ -192,7 +192,7 @@ class MetaDatabase:
             self.cursor.execute("CREATE INDEX IF NOT EXISTS idx_sync_status ON data_sync_status(stock_id, data_type, period)")
             
             self.conn.commit()
-            self.logger.info("Database tables created successfully")
+            self.logger.debug("Database tables created successfully")
             
         except Exception as e:
             self.logger.error(f"Failed to create tables: {str(e)}")

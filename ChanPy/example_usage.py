@@ -94,6 +94,46 @@ except Exception as e:
     print("Using synthetic data.")
     DATABASE_AVAILABLE = False
 
+# Shared configuration variables
+DEFAULT_SYMBOL = "002120"
+DEFAULT_EXCHANGE = "SZ"
+DEFAULT_PERIOD = "daily"
+DEFAULT_LIMIT = 3000
+
+
+def configure_analysis_parameters(symbol: Optional[str] = None, exchange: Optional[str] = None, 
+                                period: Optional[str] = None, limit: Optional[int] = None):
+    """
+    Configure the default analysis parameters
+    
+    Args:
+        symbol: Stock symbol (e.g., "002120", "000001")
+        exchange: Exchange code (e.g., "SZ", "SH")
+        period: Time period (e.g., "daily", "1min", "5min")
+        limit: Maximum number of kbars to load
+    """
+    global DEFAULT_SYMBOL, DEFAULT_EXCHANGE, DEFAULT_PERIOD, DEFAULT_LIMIT
+    
+    if symbol is not None:
+        DEFAULT_SYMBOL = symbol
+    if exchange is not None:
+        DEFAULT_EXCHANGE = exchange
+    if period is not None:
+        DEFAULT_PERIOD = period
+    if limit is not None:
+        DEFAULT_LIMIT = limit
+    
+    print(f"Analysis parameters configured: {DEFAULT_SYMBOL}.{DEFAULT_EXCHANGE} ({DEFAULT_PERIOD}), limit={DEFAULT_LIMIT}")
+
+
+def get_current_configuration() -> dict:
+    """Get the current configuration parameters"""
+    return {
+        'symbol': DEFAULT_SYMBOL,
+        'exchange': DEFAULT_EXCHANGE,
+        'period': DEFAULT_PERIOD,
+        'limit': DEFAULT_LIMIT
+    }
 
 def load_kbar_data_from_database(symbol: str = "000001", exchange: str = "SH", 
                                 period: str = "1min", limit: int = 50) -> List[Kbar]:
@@ -252,11 +292,17 @@ def demonstrate_step_by_step_processing():
     print("\n=== Step-by-Step Chan Algorithm Processing ===")
     
     # Setup logging
-    logging.basicConfig(level=logging.INFO)
+    logging.basicConfig(level=logging.DEBUG)
+    
+    # Use shared configuration variables
+    symbol = DEFAULT_SYMBOL
+    exchange = DEFAULT_EXCHANGE
+    period = DEFAULT_PERIOD
+    limit = DEFAULT_LIMIT
     
     # Load data from database or use synthetic data
     print("Loading kbar data...")
-    kbars = load_kbar_data_from_database(symbol="002120", exchange="SH", period="daily", limit=3000)
+    kbars = load_kbar_data_from_database(symbol=symbol, exchange=exchange, period=period, limit=limit)
     print(f"Using {len(kbars)} kbars for analysis")
     
     # Initialize processors
@@ -264,7 +310,10 @@ def demonstrate_step_by_step_processing():
         strict_fractal_mode=True,
         min_pen_length=0.5,
         min_kbar_count=3,
-        min_line_pens=3
+        min_line_pens=3,
+        symbol=symbol,
+        exchange=exchange, 
+        period=period
     )
     
     # Process kbars through the complete pipeline
@@ -349,8 +398,14 @@ def demonstrate_individual_components():
         from QAutils.ChanPy.pen import PenProcessor
         from QAutils.ChanPy.line import LineProcessor
     
+    # Use shared configuration variables (with smaller limit for component demo)
+    symbol = DEFAULT_SYMBOL
+    exchange = DEFAULT_EXCHANGE
+    period = DEFAULT_PERIOD
+    limit = 20  # Smaller limit for component demo
+    
     # Load data from database or use synthetic data
-    kbars = load_kbar_data_from_database(symbol="000001", exchange="SH", period="1min", limit=20)
+    kbars = load_kbar_data_from_database(symbol=symbol, exchange=exchange, period=period, limit=limit)
     
     # Step 1: Kbar Merging
     print("\n1. Kbar Merging:")
@@ -391,11 +446,21 @@ def demonstrate_market_analysis():
     """Demonstrate real-time market analysis"""
     print("\n=== Market Analysis Demo ===")
     
+    # Use shared configuration variables
+    symbol = DEFAULT_SYMBOL
+    exchange = DEFAULT_EXCHANGE
+    period = DEFAULT_PERIOD
+    limit = 25  # Smaller limit for market analysis demo
+    
     # Create processor
-    processor = ChanProcessor()
+    processor = ChanProcessor(
+        symbol=symbol,
+        exchange=exchange,
+        period=period
+    )
     
     # Load data from database or use synthetic data
-    kbars = load_kbar_data_from_database(symbol="000001", exchange="SH", period="1min", limit=25)
+    kbars = load_kbar_data_from_database(symbol=symbol, exchange=exchange, period=period, limit=limit)
     results = processor.process_kbars(kbars)
     
     if results['status'] == 'Success':
@@ -462,7 +527,11 @@ def demonstrate_multiple_symbols():
             continue
         
         # Create processor and analyze
-        processor = ChanProcessor()
+        processor = ChanProcessor(
+            symbol=symbol,
+            exchange=exchange,
+            period=period
+        )
         results = processor.process_kbars(kbars)
         
         if results['status'] == 'Success':

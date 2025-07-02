@@ -122,7 +122,7 @@ class ChanDatabase:
                 """)
                 
                 conn.commit()
-                self.logger.info("Chan database initialized successfully")
+                self.logger.debug("Chan database initialized successfully")
                 
         except Exception as e:
             self.logger.error(f"Failed to initialize chan database: {str(e)}")
