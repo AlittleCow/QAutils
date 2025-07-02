@@ -221,8 +221,11 @@ class QuantServer:
         """
         try:
             kbar_data = message.get('data', {})
-            symbol = kbar_data.get('symbol', '')
-            exchange = kbar_data.get('exchange', 'SH')  # Default to Shanghai exchange
+            symbol_with_exchange = kbar_data.get('symbol', '')
+            
+            # Extract symbol and exchange from the combined symbol string
+            symbol, exchange = self._extract_symbol_and_exchange(symbol_with_exchange)
+            
             raw_period = message.get('period', '1min')  # Default to 1-minute period
             
             # Convert period code to proper period string
@@ -336,8 +339,11 @@ class QuantServer:
         """
         try:
             series_data = message.get('data', [])
-            symbol = message.get('symbol', '')
-            exchange = message.get('exchange', 'SH')  # Default to Shanghai exchange
+            symbol_with_exchange = message.get('symbol', '')
+            
+            # Extract symbol and exchange from the combined symbol string
+            symbol, exchange = self._extract_symbol_and_exchange(symbol_with_exchange)
+            
             raw_period = message.get('period', '1min')  # Default to 1-minute period
             
             # Convert period code to proper period string
@@ -624,8 +630,11 @@ class QuantServer:
                     }
                     
             elif control_type == 'get_chan_analysis':
-                symbol = parameters.get('symbol', '')
-                exchange = parameters.get('exchange', 'SH')
+                symbol_with_exchange = parameters.get('symbol', '')
+                
+                # Extract symbol and exchange from the combined symbol string
+                symbol, exchange = self._extract_symbol_and_exchange(symbol_with_exchange)
+                
                 period = parameters.get('period', '1min')
                 
                 if not symbol:
@@ -678,8 +687,14 @@ class QuantServer:
                 }
                 
             elif control_type == 'reset_chan_analysis':
-                symbol = parameters.get('symbol', '')
-                exchange = parameters.get('exchange', 'SH')
+                symbol_with_exchange = parameters.get('symbol', '')
+                
+                # Extract symbol and exchange from the combined symbol string if symbol provided
+                if symbol_with_exchange:
+                    symbol, exchange = self._extract_symbol_and_exchange(symbol_with_exchange)
+                else:
+                    symbol, exchange = '', 'SH'
+                
                 period = parameters.get('period', '1min')
                 
                 if symbol:
@@ -962,6 +977,34 @@ class QuantServer:
             self.logger.error(f"Failed to setup stock {symbol}.{exchange}: {e}")
             return False
     
+    def _extract_symbol_and_exchange(self, symbol_with_exchange: str) -> tuple:
+        """
+        Extract symbol and exchange from combined symbol string
+        
+        Args:
+            symbol_with_exchange: Symbol string like "002120.SZ" or just "002120"
+            
+        Returns:
+            tuple: (symbol, exchange) where symbol is "002120" and exchange is "SZ"
+        """
+        if '.' in symbol_with_exchange:
+            parts = symbol_with_exchange.split('.')
+            if len(parts) == 2:
+                return parts[0], parts[1]
+        
+        # If no exchange suffix found, try to determine from symbol prefix
+        if symbol_with_exchange:
+            first_char = symbol_with_exchange[0]
+            if first_char in ['0', '3']:
+                return symbol_with_exchange, 'SZ'
+            elif first_char == '6':
+                return symbol_with_exchange, 'SH'
+            elif first_char in ['8', '4']:
+                return symbol_with_exchange, 'BJ'
+        
+        # Default fallback
+        return symbol_with_exchange, 'SH'
+
     def _convert_period_code_to_string(self, period: Union[str, int]) -> str:
         """
         Convert period code to standard period string format.

@@ -234,7 +234,7 @@ float EncodeSymbolPeriod(const std::string& symbol, const std::string& period);
 /**
  * @brief Decode symbol and period from encoded float value
  * @param encoded Encoded float value containing symbol and period
- * @param symbol Output parameter for decoded symbol string (6-digit format)
+ * @param symbol Output parameter for decoded symbol string (6-digit format with market suffix, e.g., "002120.SZ")
  * @param period Output parameter for decoded period integer
  */
 void DecodeSymbolPeriod(float encoded, std::string& symbol, int& period);
@@ -245,6 +245,13 @@ void DecodeSymbolPeriod(float encoded, std::string& symbol, int& period);
  * @return Fixed symbol string with proper padding (e.g., "002120")
  */
 std::string symbolIntFixture(int symbolInt);
+
+/**
+ * @brief Convert symbol to market exchange format for Chinese stocks
+ * @param symbol 6-digit symbol string (e.g., "002120")
+ * @return Symbol with market suffix (e.g., "002120.SZ")
+ */
+std::string MarketConvert(const std::string& symbol);
 
 /**
  * @brief Convert period integer to readable string format

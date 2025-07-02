@@ -286,7 +286,7 @@ float EncodeSymbolPeriod(const std::string& symbol, const std::string& period)
 /**
  * @brief Decode symbol and period from encoded float value
  * @param encoded Encoded float value containing symbol and period information
- * @param symbol Output symbol string (6-digit format)
+ * @param symbol Output symbol string (6-digit format with market suffix)
  * @param period Output period integer
  */
 void DecodeSymbolPeriod(float encoded, std::string& symbol, int& period)
@@ -294,11 +294,15 @@ void DecodeSymbolPeriod(float encoded, std::string& symbol, int& period)
     int encodedInt = static_cast<int>(encoded);
     period = encodedInt / 1000000;
     int symbolInt = encodedInt % 1000000;
-    // Use symbolIntFixture to ensure 6-digit format
-    symbol = symbolIntFixture(symbolInt);
     
-    log_debug("DecodeSymbolPeriod: encoded=%f, encodedInt=%d, symbolInt=%d, symbol=%s, period=%d", 
-             encoded, encodedInt, symbolInt, symbol.c_str(), period);
+    // Use symbolIntFixture to ensure 6-digit format
+    std::string baseSymbol = symbolIntFixture(symbolInt);
+    
+    // Use MarketConvert to add market suffix
+    symbol = MarketConvert(baseSymbol);
+    
+    log_debug("DecodeSymbolPeriod: encoded=%f, encodedInt=%d, symbolInt=%d, baseSymbol=%s, symbol=%s, period=%d", 
+             encoded, encodedInt, symbolInt, baseSymbol.c_str(), symbol.c_str(), period);
 }
 
 /**
@@ -318,6 +322,46 @@ std::string symbolIntFixture(int symbolInt)
     
     log_debug("symbolIntFixture: input=%d, output=%s", symbolInt, symbolStr.c_str());
     return symbolStr;
+}
+
+/**
+ * @brief Convert symbol to market exchange format for Chinese stocks
+ * @param symbol 6-digit symbol string (e.g., "002120")
+ * @return Symbol with market suffix (e.g., "002120.SZ")
+ */
+std::string MarketConvert(const std::string& symbol)
+{
+    if (symbol.empty()) {
+        log_debug("MarketConvert: empty symbol, returning as-is");
+        return symbol;
+    }
+    
+    // Get the first character to determine the market
+    char firstChar = symbol[0];
+    std::string market;
+    
+    switch (firstChar) {
+        case '0':  // Shenzhen Main Board
+        case '3':  // ChiNext Growth Enterprise Market
+            market = "SZ";
+            break;
+        case '6':  // Shanghai Stock Exchange
+            market = "SH";
+            break;
+        case '8':  // Beijing Stock Exchange - New Third Board
+        case '4':  // Beijing Stock Exchange - STAR Market
+            market = "BJ";
+            break;
+        default:
+            // Unknown prefix, default to SH for safety
+            log_debug("MarketConvert: unknown symbol prefix '%c', defaulting to SH", firstChar);
+            market = "SH";
+            break;
+    }
+    
+    std::string result = symbol + "." + market;
+    log_debug("MarketConvert: input=%s, output=%s", symbol.c_str(), result.c_str());
+    return result;
 }
 
 /**
