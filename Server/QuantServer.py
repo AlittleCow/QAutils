@@ -22,6 +22,18 @@ import pandas as pd
 # Import database manager
 from module.database.db import DatabaseManager, create_database_manager
 
+# Import Chan Indicator
+try:
+    import sys
+    import os
+    sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+    from ChanPy.chan import ChanIndicator
+    CHAN_INDICATOR_AVAILABLE = True
+except ImportError as e:
+    logging.warning(f"Chan Indicator not available: {e}")
+    ChanIndicator = None
+    CHAN_INDICATOR_AVAILABLE = False
+
 
 class QuantServer:
     """ZeroMQ based server for TDX client communication"""
@@ -59,6 +71,10 @@ class QuantServer:
         # Initialize indicator functions registry
         self.indicator_registry = {}
         self._register_default_indicators()
+
+        # Initialize Chan indicators registry
+        self.chan_indicators = {}  # symbol.exchange -> ChanIndicator instance
+        self.chan_enabled = True  # Enable/disable Chan analysis
 
         # Initialize database manager with default configuration
         try:
@@ -142,6 +158,15 @@ class QuantServer:
                 self.logger.info("Database manager closed")
             except Exception as e:
                 self.logger.error(f"Error closing database manager: {e}")
+        
+        # Cleanup Chan indicators
+        if hasattr(self, 'chan_indicators'):
+            try:
+                self.chan_indicators.clear()
+                self.logger.info(f"Chan indicators cleared")
+            except Exception as e:
+                self.logger.error(f"Error clearing Chan indicators: {e}")
+                
         self.logger.info("Server cleanup completed")
     
     def _handle_message(self, message: Dict[str, Any]) -> Dict[str, Any]:
@@ -262,6 +287,33 @@ class QuantServer:
             # Add database status to response
             processed_data['database_status'] = db_status
             
+            # Perform Chan analysis if enabled
+            chan_analysis = None
+            if self.chan_enabled:
+                try:
+                    chan_indicator = self._get_or_create_chan_indicator(symbol, exchange, period)
+                    if chan_indicator:
+                        chan_result = chan_indicator.onKbar({
+                            'timestamp': timestamp,
+                            'open': open_price,
+                            'high': high_price,
+                            'low': low_price,
+                            'close': close_price,
+                            'volume': volume
+                        })
+                        
+                        if chan_result.get('status') == 'success':
+                            chan_analysis = chan_result.get('analysis_results', {})
+                            self.logger.debug(f"Chan analysis completed for {symbol}.{exchange}")
+                        else:
+                            self.logger.warning(f"Chan analysis failed: {chan_result.get('message', 'Unknown error')}")
+                    
+                except Exception as chan_error:
+                    self.logger.error(f"Error in Chan analysis: {chan_error}")
+            
+            # Add Chan analysis to response
+            processed_data['chan_analysis'] = chan_analysis
+            
             return {
                 'status': 'success',
                 'type': 'kbar_data_response',
@@ -349,6 +401,32 @@ class QuantServer:
                     db_status = f"error: {str(db_error)}"
                     self.logger.error(f"Failed to store kbar series in database: {db_error}")
 
+            # Perform Chan analysis if enabled
+            chan_analysis = None
+            if self.chan_enabled and processed_series:
+                try:
+                    chan_indicator = self._get_or_create_chan_indicator(symbol, exchange, period)
+                    if chan_indicator:
+                        # For series data, we process the last kbar for Chan analysis
+                        last_kbar = processed_series[-1]
+                        chan_result = chan_indicator.onKbar({
+                            'timestamp': last_kbar['timestamp'],
+                            'open': last_kbar['open'],
+                            'high': last_kbar['high'],
+                            'low': last_kbar['low'],
+                            'close': last_kbar['close'],
+                            'volume': last_kbar['volume']
+                        })
+                        
+                        if chan_result.get('status') == 'success':
+                            chan_analysis = chan_result.get('analysis_results', {})
+                            self.logger.debug(f"Chan analysis completed for {symbol}.{exchange} series")
+                        else:
+                            self.logger.warning(f"Chan analysis failed for series: {chan_result.get('message', 'Unknown error')}")
+                    
+                except Exception as chan_error:
+                    self.logger.error(f"Error in Chan analysis for series: {chan_error}")
+
             return {
                 'status': 'success',
                 'type': 'kbar_series_response',
@@ -358,6 +436,7 @@ class QuantServer:
                 'data': processed_series,
                 'count': len(processed_series),
                 'database_status': db_status,
+                'chan_analysis': chan_analysis,
                 'timestamp': datetime.now().isoformat()
             }
             
@@ -489,7 +568,10 @@ class QuantServer:
                         'running': self.running,
                         'available_indicators': list(self.indicator_registry.keys()),
                         'parameter_count': len(self.server_params),
-                        'database_available': self.db_manager is not None
+                        'database_available': self.db_manager is not None,
+                        'chan_enabled': self.chan_enabled,
+                        'chan_indicators_count': len(self.chan_indicators),
+                        'chan_available': CHAN_INDICATOR_AVAILABLE
                     },
                     'timestamp': datetime.now().isoformat()
                 }
@@ -540,11 +622,124 @@ class QuantServer:
                         'message': f'Failed to get symbols: {str(e)}',
                         'timestamp': datetime.now().isoformat()
                     }
+                    
+            elif control_type == 'get_chan_analysis':
+                symbol = parameters.get('symbol', '')
+                exchange = parameters.get('exchange', 'SH')
+                period = parameters.get('period', '1min')
+                
+                if not symbol:
+                    return {
+                        'status': 'error',
+                        'message': 'Symbol parameter required',
+                        'timestamp': datetime.now().isoformat()
+                    }
+                
+                try:
+                    chan_indicator = self._get_or_create_chan_indicator(symbol, exchange, period)
+                    if chan_indicator:
+                        analysis_results = chan_indicator.get_analysis_results()
+                        return {
+                            'status': 'success',
+                            'type': 'control_response',
+                            'chan_analysis': analysis_results,
+                            'timestamp': datetime.now().isoformat()
+                        }
+                    else:
+                        return {
+                            'status': 'error',
+                            'message': 'Chan indicator not available or disabled',
+                            'timestamp': datetime.now().isoformat()
+                        }
+                        
+                except Exception as e:
+                    return {
+                        'status': 'error',
+                        'message': f'Failed to get Chan analysis: {str(e)}',
+                        'timestamp': datetime.now().isoformat()
+                    }
+                    
+            elif control_type == 'enable_chan':
+                self.chan_enabled = True
+                return {
+                    'status': 'success',
+                    'type': 'control_response',
+                    'message': 'Chan analysis enabled',
+                    'timestamp': datetime.now().isoformat()
+                }
+                
+            elif control_type == 'disable_chan':
+                self.chan_enabled = False
+                return {
+                    'status': 'success',
+                    'type': 'control_response',
+                    'message': 'Chan analysis disabled',
+                    'timestamp': datetime.now().isoformat()
+                }
+                
+            elif control_type == 'reset_chan_analysis':
+                symbol = parameters.get('symbol', '')
+                exchange = parameters.get('exchange', 'SH')
+                period = parameters.get('period', '1min')
+                
+                if symbol:
+                    # Reset specific symbol
+                    indicator_key = f"{symbol}.{exchange}.{period}"
+                    if indicator_key in self.chan_indicators:
+                        self.chan_indicators[indicator_key].reset_analysis()
+                        return {
+                            'status': 'success',
+                            'type': 'control_response',
+                            'message': f'Chan analysis reset for {symbol}.{exchange} ({period})',
+                            'timestamp': datetime.now().isoformat()
+                        }
+                    else:
+                        return {
+                            'status': 'error',
+                            'message': f'No Chan indicator found for {symbol}.{exchange} ({period})',
+                            'timestamp': datetime.now().isoformat()
+                        }
+                else:
+                    # Reset all indicators
+                    for indicator in self.chan_indicators.values():
+                        indicator.reset_analysis()
+                    return {
+                        'status': 'success',
+                        'type': 'control_response',
+                        'message': f'Chan analysis reset for all {len(self.chan_indicators)} indicators',
+                        'timestamp': datetime.now().isoformat()
+                    }
+                    
+            elif control_type == 'get_chan_indicators':
+                indicator_list = []
+                for key, indicator in self.chan_indicators.items():
+                    parts = key.split('.')
+                    if len(parts) >= 3:
+                        symbol = parts[0]
+                        exchange = parts[1]
+                        period = '.'.join(parts[2:])
+                        
+                        indicator_list.append({
+                            'symbol': symbol,
+                            'exchange': exchange,
+                            'period': period,
+                            'key': key,
+                            'data_summary': indicator._get_data_summary()
+                        })
+                
+                return {
+                    'status': 'success',
+                    'type': 'control_response',
+                    'chan_indicators': indicator_list,
+                    'total_indicators': len(indicator_list),
+                    'chan_enabled': self.chan_enabled,
+                    'timestamp': datetime.now().isoformat()
+                }
             else:
                 return {
                     'status': 'error',
                     'message': f'Unknown control type: {control_type}',
-                    'available_controls': ['set_param', 'get_param', 'get_all_params', 'server_info', 'database_stats', 'get_symbols'],
+                    'available_controls': ['set_param', 'get_param', 'get_all_params', 'server_info', 'database_stats', 'get_symbols', 'get_chan_analysis', 'enable_chan', 'disable_chan', 'reset_chan_analysis', 'get_chan_indicators'],
                     'timestamp': datetime.now().isoformat()
                 }
                 
@@ -816,6 +1011,53 @@ class QuantServer:
         result = period_mapping.get(period_code, "daily")
         self.logger.debug(f"Converted period code {period} to {result}")
         return result
+
+    def _get_or_create_chan_indicator(self, symbol: str, exchange: str, period: str):
+        """
+        Get or create Chan indicator for a symbol
+        
+        Args:
+            symbol: Stock symbol
+            exchange: Exchange code
+            period: Time period
+            
+        Returns:
+            ChanIndicator instance or None if not available
+        """
+        if not self.chan_enabled or not CHAN_INDICATOR_AVAILABLE:
+            return None
+            
+        if not self.db_manager:
+            self.logger.warning("Database manager not available for Chan indicator")
+            return None
+        
+        # Create unique key for this symbol/exchange/period combination
+        indicator_key = f"{symbol}.{exchange}.{period}"
+        
+        # Return existing indicator if available
+        if indicator_key in self.chan_indicators:
+            return self.chan_indicators[indicator_key]
+        
+        try:
+            # Create new Chan indicator
+            if ChanIndicator is None:
+                raise ImportError("ChanIndicator class not available")
+                
+            chan_indicator = ChanIndicator(
+                db_manager=self.db_manager,
+                symbol=symbol,
+                exchange=exchange,
+                period=period
+            )
+            
+            self.chan_indicators[indicator_key] = chan_indicator
+            self.logger.info(f"Created Chan indicator for {symbol}.{exchange} ({period})")
+            
+            return chan_indicator
+            
+        except Exception as e:
+            self.logger.error(f"Failed to create Chan indicator for {symbol}.{exchange}: {e}")
+            return None
 
 
 def main():
