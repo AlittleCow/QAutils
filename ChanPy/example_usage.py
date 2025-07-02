@@ -273,64 +273,64 @@ def demonstrate_step_by_step_processing():
     
     # Display results
     print(f"\nProcessing Status: {results['status']}")
-    print(f"Summary: {results['summary']}")
+    # print(f"Summary: {results['summary']}")
     
-    # Show step-by-step results
-    if 'processing_steps' in results:
-        steps = results['processing_steps']
+    # # Show step-by-step results
+    # if 'processing_steps' in results:
+    #     steps = results['processing_steps']
         
-        if 'step1_merge' in steps:
-            merge_info = steps['step1_merge']
-            print(f"\nStep 1 - Kbar Merging:")
-            print(f"  Original kbars: {merge_info['original_kbars']}")
-            print(f"  Merged kbars: {merge_info['merged_kbars']}")
-            print(f"  Compression ratio: {merge_info['compression_ratio']:.2f}")
+    #     if 'step1_merge' in steps:
+    #         merge_info = steps['step1_merge']
+    #         print(f"\nStep 1 - Kbar Merging:")
+    #         print(f"  Original kbars: {merge_info['original_kbars']}")
+    #         print(f"  Merged kbars: {merge_info['merged_kbars']}")
+    #         print(f"  Compression ratio: {merge_info['compression_ratio']:.2f}")
         
-        if 'step2_fractals' in steps:
-            fractal_info = steps['step2_fractals']
-            print(f"\nStep 2 - Fractal Identification:")
-            print(f"  Total fractals: {fractal_info['total_fractals']}")
-            print(f"  Top fractals: {fractal_info['top_fractals']}")
-            print(f"  Bottom fractals: {fractal_info['bottom_fractals']}")
+    #     if 'step2_fractals' in steps:
+    #         fractal_info = steps['step2_fractals']
+    #         print(f"\nStep 2 - Fractal Identification:")
+    #         print(f"  Total fractals: {fractal_info['total_fractals']}")
+    #         print(f"  Top fractals: {fractal_info['top_fractals']}")
+    #         print(f"  Bottom fractals: {fractal_info['bottom_fractals']}")
         
-        if 'step3_pens' in steps:
-            pen_info = steps['step3_pens']
-            print(f"\nStep 3 - Pen Formation:")
-            print(f"  Total pens: {pen_info['total_pens']}")
-            print(f"  Upward pens: {pen_info['upward_pens']}")
-            print(f"  Downward pens: {pen_info['downward_pens']}")
+    #     if 'step3_pens' in steps:
+    #         pen_info = steps['step3_pens']
+    #         print(f"\nStep 3 - Pen Formation:")
+    #         print(f"  Total pens: {pen_info['total_pens']}")
+    #         print(f"  Upward pens: {pen_info['upward_pens']}")
+    #         print(f"  Downward pens: {pen_info['downward_pens']}")
         
-        if 'step4_lines' in steps:
-            line_info = steps['step4_lines']
-            print(f"\nStep 4 - Line Formation:")
-            print(f"  Total lines: {line_info['total_lines']}")
-            print(f"  Upward lines: {line_info['upward_lines']}")
-            print(f"  Downward lines: {line_info['downward_lines']}")
-            print(f"  Broken lines: {line_info['broken_lines']}")
+    #     if 'step4_lines' in steps:
+    #         line_info = steps['step4_lines']
+    #         print(f"\nStep 4 - Line Formation:")
+    #         print(f"  Total lines: {line_info['total_lines']}")
+    #         print(f"  Upward lines: {line_info['upward_lines']}")
+    #         print(f"  Downward lines: {line_info['downward_lines']}")
+    #         print(f"  Broken lines: {line_info['broken_lines']}")
             
-            if line_info['global_line_info']['exists']:
-                global_info = line_info['global_line_info']
-                print(f"  Global line: {global_info['direction']} ({global_info['status']})")
+    #         if line_info['global_line_info']['exists']:
+    #             global_info = line_info['global_line_info']
+    #             print(f"  Global line: {global_info['direction']} ({global_info['status']})")
     
-    # Show latest structures
-    if 'latest_structures' in results:
-        structures = results['latest_structures']
-        print(f"\nLatest Structures:")
+    # # Show latest structures
+    # if 'latest_structures' in results:
+    #     structures = results['latest_structures']
+    #     print(f"\nLatest Structures:")
         
-        if structures['latest_fractal']:
-            fractal = structures['latest_fractal']
-            print(f"  Latest Fractal: {fractal['type']} at {fractal['price']:.2f} "
-                  f"(strength: {fractal['strength']:.4f})")
+    #     if structures['latest_fractal']:
+    #         fractal = structures['latest_fractal']
+    #         print(f"  Latest Fractal: {fractal['type']} at {fractal['price']:.2f} "
+    #               f"(strength: {fractal['strength']:.4f})")
         
-        if structures['latest_pen']:
-            pen = structures['latest_pen']
-            print(f"  Latest Pen: {pen['direction']} length {pen['length']:.2f} "
-                  f"({pen['kbar_count']} kbars)")
+    #     if structures['latest_pen']:
+    #         pen = structures['latest_pen']
+    #         print(f"  Latest Pen: {pen['direction']} length {pen['length']:.2f} "
+    #               f"({pen['kbar_count']} kbars)")
         
-        if structures['latest_line']:
-            line = structures['latest_line']
-            print(f"  Latest Line: {line['direction']} with {line['pen_count']} pens "
-                  f"({line['status']})")
+    #     if structures['latest_line']:
+    #         line = structures['latest_line']
+    #         print(f"  Latest Line: {line['direction']} with {line['pen_count']} pens "
+    #               f"({line['status']})")
 
 
 def demonstrate_individual_components():

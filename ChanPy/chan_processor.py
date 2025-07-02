@@ -17,6 +17,7 @@ from .fractal import FractalIdentifier, Fractal
 from .pen import PenProcessor, ChanPen
 from .line import LineProcessor, ChanLine
 from .chan import Kbar  # Import Kbar from existing chan module
+from .context import ChanContext, ChanState  # Import context management
 
 
 class ChanProcessor:
@@ -24,14 +25,30 @@ class ChanProcessor:
     Main Chan Algorithm Processor
     
     Coordinates all components to perform complete Chan analysis following
-    the specified four-step process.
+    the specified four-step process. Integrates with ChanContext for state
+    management and persistence.
+    
+    Features:
+    - Complete Chan analysis pipeline (merge, fractals, pens, lines)
+    - Context management for multi-symbol/period analysis
+    - Automatic database persistence of analysis results
+    - Incremental processing capabilities
+    - Historical data loading and analysis
+    - Real-time market state analysis
+    
+    The processor maintains both local data storage (for backward compatibility)
+    and integrates with ChanContext for advanced state management and persistence.
     """
     
     def __init__(self, 
                  strict_fractal_mode: bool = True,
                  min_pen_length: float = 0.0,
                  min_kbar_count: int = 5,
-                 min_line_pens: int = 3):
+                 min_line_pens: int = 3,
+                 context: Optional[ChanContext] = None,
+                 symbol: Optional[str] = None,
+                 exchange: Optional[str] = None,
+                 period: Optional[str] = None):
         """
         Initialize Chan Processor
         
@@ -40,8 +57,28 @@ class ChanProcessor:
             min_pen_length: Minimum pen length for validation
             min_kbar_count: Minimum kbars for valid pen
             min_line_pens: Minimum pens for valid line
+            context: ChanContext instance for state management
+            symbol: Stock symbol for context tracking
+            exchange: Exchange code for context tracking
+            period: Time period for context tracking
         """
         self.logger = logging.getLogger(f"{__name__}")
+        
+        # Initialize context management
+        self.context = context if context is not None else ChanContext()
+        self.symbol = symbol
+        self.exchange = exchange
+        self.period = period
+        
+        # Set current context if all parameters provided
+        if all([symbol, exchange, period]):
+            # Type guard: we know these are not None after the check above
+            assert symbol is not None
+            assert exchange is not None
+            assert period is not None
+            
+            self.context.set_current_context(symbol, exchange, period)
+            self.logger.info(f"Set Chan context to {symbol}.{exchange} ({period})")
         
         # Initialize all processors
         self.kbar_merger = KbarMerger()
@@ -52,14 +89,28 @@ class ChanProcessor:
         )
         self.line_processor = LineProcessor(min_line_pens=min_line_pens)
         
-        # Data storage
+        # Data storage (maintained for backward compatibility)
         self.raw_kbars: List[Kbar] = []
         self.merged_kbars: List[MergedKbar] = []
         self.fractals: List[Fractal] = []
         self.pens: List[ChanPen] = []
         self.lines: List[ChanLine] = []
         
-        self.logger.info("ChanProcessor initialized with all components")
+        # Initialize from database if context is available
+        if all([self.context, symbol, exchange, period]):
+            try:
+                # Type guard: we know these are not None after the check above
+                assert symbol is not None
+                assert exchange is not None
+                assert period is not None
+                
+                self.context.initialize_from_database(symbol, exchange, period)
+                self._load_from_context()
+                self.logger.info("Initialized Chan processor from database context")
+            except Exception as e:
+                self.logger.warning(f"Failed to initialize from database: {e}")
+        
+        self.logger.info("ChanProcessor initialized with all components and context management")
     
     def process_kbars(self, kbars: List[Kbar]) -> Dict[str, Any]:
         """
@@ -75,6 +126,15 @@ class ChanProcessor:
         results = {}
         
         try:
+            # Update context with raw kbars
+            if self.context and all([self.symbol, self.exchange, self.period]):
+                # Type guard: we know these are not None after the check above
+                assert self.symbol is not None
+                assert self.exchange is not None
+                assert self.period is not None
+                
+                self.context.update_kbars(kbars, self.symbol, self.exchange, self.period)
+            
             # Step 1: Merge kbar process for consecutive kbars
             self.logger.info("Step 1: Processing kbar merging")
             self.merged_kbars = self.kbar_merger.process_kbar_sequence(kbars)
@@ -84,10 +144,19 @@ class ChanProcessor:
                 'compression_ratio': len(self.merged_kbars) / len(kbars) if kbars else 0
             }
             
+            # Update context with merged kbars
+            if self.context and all([self.symbol, self.exchange, self.period]):
+                # Type guard: we know these are not None after the check above
+                assert self.symbol is not None
+                assert self.exchange is not None
+                assert self.period is not None
+                
+                self.context.update_merged_kbars(self.merged_kbars, self.symbol, self.exchange, self.period)
+            
             if len(self.merged_kbars) < 3:
                 self.logger.warning("Insufficient merged kbars for fractal analysis")
                 return self._build_results(results, "Insufficient merged kbars")
-            
+
             # Step 2: Check consecutive merged kbars for fractals
             self.logger.info("Step 2: Identifying fractals from merged kbars")  
             self.fractals = self.fractal_identifier.process_merged_kbars(self.merged_kbars)
@@ -98,10 +167,19 @@ class ChanProcessor:
                 'fractal_summary': self.fractal_identifier.get_fractal_summary()
             }
             
+            # Update context with fractals
+            if self.context and all([self.symbol, self.exchange, self.period]):
+                # Type guard: we know these are not None after the check above
+                assert self.symbol is not None
+                assert self.exchange is not None
+                assert self.period is not None
+                
+                self.context.update_fractals(self.fractals, self.symbol, self.exchange, self.period)
+            
             if len(self.fractals) < 2:
                 self.logger.warning("Insufficient fractals for pen analysis")
                 return self._build_results(results, "Insufficient fractals")
-            
+
             # Step 3: Process raw kbars from fractal to fractal to identify chanpen
             self.logger.info("Step 3: Creating pens from fractals with raw kbar validation")
             self.pen_processor.set_raw_kbars(kbars)
@@ -113,10 +191,19 @@ class ChanProcessor:
                 'pen_statistics': self.pen_processor.get_pen_statistics()
             }
             
+            # Update context with pens
+            if self.context and all([self.symbol, self.exchange, self.period]):
+                # Type guard: we know these are not None after the check above
+                assert self.symbol is not None
+                assert self.exchange is not None
+                assert self.period is not None
+                
+                self.context.update_pens(self.pens, self.symbol, self.exchange, self.period)
+            
             if len(self.pens) < 3:
                 self.logger.warning("Insufficient pens for line analysis")
                 return self._build_results(results, "Insufficient pens")
-            
+
             # Step 4: Process chanpen breaking and chanline formation
             self.logger.info("Step 4: Forming lines and analyzing breaking patterns")
             self.lines = self.line_processor.process_pens(self.pens)
@@ -133,6 +220,15 @@ class ChanProcessor:
                 # Update global line status
                 recent_pens = self.pens[-5:] if len(self.pens) >= 5 else self.pens
                 self.line_processor.update_global_line_status(recent_pens)
+            
+            # Update context with lines (with auto-save to database)
+            if self.context and all([self.symbol, self.exchange, self.period]):
+                # Type guard: we know these are not None after the check above
+                assert self.symbol is not None
+                assert self.exchange is not None
+                assert self.period is not None
+                
+                self.context.update_lines(self.lines, self.symbol, self.exchange, self.period, save_to_db=True)
             
             results['step4_lines'] = {
                 'total_lines': len(self.lines),
@@ -369,7 +465,86 @@ class ChanProcessor:
         self.pen_processor.clear()
         self.line_processor.clear()
         
-        self.logger.info("Cleared all Chan analysis data")
+        # Clear context data if available
+        if self.context and all([self.symbol, self.exchange, self.period]):
+            # Type guard: we know these are not None after the check above
+            assert self.symbol is not None
+            assert self.exchange is not None
+            assert self.period is not None
+            
+            self.context.clear_context(self.symbol, self.exchange, self.period)
+        
+        self.logger.info("Cleared all Chan analysis data and context")
+    
+    def get_latest_from_context(self) -> Dict[str, Any]:
+        """
+        Get latest analysis items from context
+        
+        Returns:
+            Dictionary with latest items from context
+        """
+        if not self.context:
+            return {'error': 'No context available'}
+        
+        return {
+            'latest_kbar': self.context.get_latest_kbar(self.symbol, self.exchange, self.period),
+            'latest_fractal': self.context.get_latest_fractal(self.symbol, self.exchange, self.period),
+            'latest_pen': self.context.get_latest_pen(self.symbol, self.exchange, self.period),
+            'latest_line': self.context.get_latest_line(self.symbol, self.exchange, self.period),
+            'global_line': self.context.get_global_line(self.symbol, self.exchange, self.period)
+        }
+    
+    def load_historical_lines(self, start_time: Optional[str] = None, 
+                             end_time: Optional[str] = None, 
+                             limit: Optional[int] = None) -> List[Dict[str, Any]]:
+        """
+        Load historical Chan lines from database
+        
+        Args:
+            start_time: Filter by start time
+            end_time: Filter by end time  
+            limit: Maximum number of records
+            
+        Returns:
+            List of historical line data
+        """
+        if not self.context or not all([self.symbol, self.exchange, self.period]):
+            self.logger.warning("Context or symbol/exchange/period not available")
+            return []
+        
+        # Type guard: we know these are not None after the check above
+        assert self.symbol is not None
+        assert self.exchange is not None
+        assert self.period is not None
+        
+        return self.context.load_lines_from_database(
+            self.symbol, self.exchange, self.period, start_time, end_time, limit
+        )
+    
+    def get_analysis_with_context(self) -> Dict[str, Any]:
+        """
+        Get complete analysis including context information
+        
+        Returns:
+            Enhanced analysis with context data
+        """
+        # Get standard analysis
+        analysis = self.get_complete_analysis()
+        
+        # Add context information
+        if self.context:
+            context_summary = self.get_context_summary()
+            latest_items = self.get_latest_from_context()
+            
+            analysis['context'] = {
+                'summary': context_summary,
+                'latest_items': latest_items,
+                'symbol': self.symbol,
+                'exchange': self.exchange,
+                'period': self.period
+            }
+        
+        return analysis
     
     def set_parameters(self, **kwargs):
         """
@@ -418,4 +593,133 @@ class ChanProcessor:
                 self.pen_processor.get_pen_sequence_validity() and
                 self.line_processor.validate_line_sequence()
             )
-        } 
+        }
+    
+    def close(self):
+        """
+        Close the Chan processor and release resources
+        
+        This method should be called when the processor is no longer needed
+        to properly close database connections and clean up resources.
+        """
+        try:
+            # Save current state to context before closing
+            if self.context and all([self.symbol, self.exchange, self.period]):
+                self._save_to_context()
+                
+            # Close context and database connections
+            if self.context:
+                self.context.close()
+                
+            self.logger.info("Chan processor closed successfully")
+            
+        except Exception as e:
+            self.logger.error(f"Error closing Chan processor: {e}")
+    
+    def __enter__(self):
+        """Context manager entry"""
+        return self
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Context manager exit"""
+        self.close()
+
+    def _load_from_context(self):
+        """Load data from the context state"""
+        if not self.context or not all([self.symbol, self.exchange, self.period]):
+            return
+        
+        # Type guard: we know these are not None after the check above
+        assert self.symbol is not None
+        assert self.exchange is not None
+        assert self.period is not None
+        
+        try:
+            state = self.context.get_state(self.symbol, self.exchange, self.period)
+            
+            # Load data from context state
+            if state.current_kbars:
+                self.raw_kbars = state.current_kbars
+                
+            if state.current_merged_kbars:
+                self.merged_kbars = state.current_merged_kbars
+                
+            if state.current_fractals:
+                self.fractals = state.current_fractals
+                
+            if state.current_pens:
+                self.pens = state.current_pens
+                
+            if state.current_lines:
+                self.lines = state.current_lines
+            
+            self.logger.debug(f"Loaded context data: {len(self.raw_kbars)} kbars, "
+                            f"{len(self.merged_kbars)} merged kbars, {len(self.fractals)} fractals, "
+                            f"{len(self.pens)} pens, {len(self.lines)} lines")
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to load from context: {e}")
+    
+    def _save_to_context(self):
+        """Save current analysis data to context"""
+        if not self.context or not all([self.symbol, self.exchange, self.period]):
+            return
+        
+        # Type guard: we know these are not None after the check above
+        assert self.symbol is not None
+        assert self.exchange is not None
+        assert self.period is not None
+        
+        try:
+            # Update context with current data
+            if self.raw_kbars:
+                self.context.update_kbars(self.raw_kbars, self.symbol, self.exchange, self.period)
+                
+            if self.merged_kbars:
+                self.context.update_merged_kbars(self.merged_kbars, self.symbol, self.exchange, self.period)
+                
+            if self.fractals:
+                self.context.update_fractals(self.fractals, self.symbol, self.exchange, self.period)
+                
+            if self.pens:
+                self.context.update_pens(self.pens, self.symbol, self.exchange, self.period)
+                
+            if self.lines:
+                self.context.update_lines(self.lines, self.symbol, self.exchange, self.period, save_to_db=True)
+            
+            self.logger.debug("Saved current analysis data to context")
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to save to context: {e}")
+
+    def set_context(self, symbol: str, exchange: str, period: str):
+        """
+        Set the context for Chan analysis
+        
+        Args:
+            symbol: Stock symbol
+            exchange: Exchange code  
+            period: Time period
+        """
+        self.symbol = symbol
+        self.exchange = exchange
+        self.period = period
+        
+        if self.context:
+            self.context.set_current_context(symbol, exchange, period)
+            self.logger.info(f"Updated Chan context to {symbol}.{exchange} ({period})")
+            
+            # Try to initialize from database
+            try:
+                self.context.initialize_from_database(symbol, exchange, period)
+                self._load_from_context()
+                self.logger.info("Loaded existing analysis from database context")
+            except Exception as e:
+                self.logger.debug(f"No existing data in database: {e}")
+    
+    def get_context_summary(self) -> Dict[str, Any]:
+        """Get summary of current context state"""
+        if not self.context:
+            return {'error': 'No context available'}
+        
+        return self.context.get_context_summary(self.symbol, self.exchange, self.period) 
