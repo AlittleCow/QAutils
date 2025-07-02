@@ -183,8 +183,10 @@ class ChanIndicator:
             if not df.empty:
                 # Convert DataFrame to Kbar objects
                 for _, row in df.iterrows():
+                    # Use 'ts' column name as returned by database
+                    timestamp_col = 'ts' if 'ts' in row else 'timestamp'
                     kbar = Kbar(
-                        timestamp=str(row['timestamp']),
+                        timestamp=str(row[timestamp_col]),
                         open=float(row['open']),
                         high=float(row['high']),
                         low=float(row['low']),
