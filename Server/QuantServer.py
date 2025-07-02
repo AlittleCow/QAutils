@@ -236,7 +236,7 @@ class QuantServer:
             volume = kbar_data.get('volume', 0)
             
             # debug print
-            print(f"Received kbar data: symbol={symbol}, exchange={exchange}, raw_period={raw_period}, period={period}, "
+            print(f"Received kbar data: \nsymbol={symbol}, exchange={exchange}, period={period}, "
                   f"timestamp={timestamp}, open={open_price:.2f}, high={high_price:.2f}, "
                   f"low={low_price:.2f}, close={close_price:.2f}, volume={volume}")
 
@@ -344,7 +344,7 @@ class QuantServer:
             period = self._convert_period_code_to_string(raw_period)
             
             # debug print
-            print(f"Received kbar series: symbol={symbol}, exchange={exchange}, raw_period={raw_period}, period={period}, count={len(series_data)}")
+            print(f"Received kbar series: \nsymbol={symbol}, exchange={exchange}, period={period}, count={len(series_data)}")
 
             processed_series = []
             for kbar in series_data:
@@ -981,31 +981,31 @@ class QuantServer:
         # Try to convert to integer code
         try:
             if isinstance(period, str):
-                period_code = int(period) - 1  # Convert to 0-based index like C++ version
+                period_code = int(period)  # Keep as 1-based to match TDX client
             else:
-                period_code = int(period) - 1
+                period_code = int(period)
         except (ValueError, TypeError):
             # If conversion fails, default to daily
             self.logger.warning(f"Unknown period format: {period}, defaulting to daily")
             return "daily"
         
         # Convert period code to standard period string
-        # Based on TDX period codes: 0-13 representing different time periods
+        # Based on TDX period codes: 1-based indexing to match client
         period_mapping = {
-            0: "1min",      # M1 - 1 minute
-            1: "5min",      # M5 - 5 minutes  
-            2: "15min",     # M15 - 15 minutes
-            3: "30min",     # M30 - 30 minutes
-            4: "1hour",     # H1 - 1 hour
-            5: "daily",     # Day - daily
-            6: "weekly",    # Week - weekly
-            7: "monthly",   # Month - monthly
-            8: "1min",      # M-Min - multi-minute (default to 1min)
-            9: "daily",     # M-Day - multi-day (default to daily)
-            10: "quarterly", # Season - quarterly
-            11: "yearly",   # Year - yearly
-            12: "5sec",     # Sec5 - 5 seconds
-            13: "1sec",     # M-Sec - multi-second (default to 1sec)
+            1: "1min",      # M1 - 1 minute
+            2: "5min",      # M5 - 5 minutes  
+            3: "15min",     # M15 - 15 minutes
+            4: "30min",     # M30 - 30 minutes
+            5: "1hour",     # H1 - 1 hour
+            6: "daily",     # Day - daily
+            7: "weekly",    # Week - weekly
+            8: "monthly",   # Month - monthly
+            9: "1min",      # M-Min - multi-minute (default to 1min)
+            10: "daily",    # M-Day - multi-day (default to daily)
+            11: "quarterly", # Season - quarterly
+            12: "yearly",   # Year - yearly
+            13: "5sec",     # Sec5 - 5 seconds
+            14: "1sec",     # M-Sec - multi-second (default to 1sec)
         }
         
         result = period_mapping.get(period_code, "daily")

@@ -37,7 +37,7 @@ void demonstrateZmqClient() {
             151.50,
             1000000
         };
-        auto single_kbar_response = client.testSingleKBar(single_kbar);
+        auto single_kbar_response = client.testSingleKBar(single_kbar, "1min");
         std::cout << "Single K-bar response: " << single_kbar_response.dump(2) << std::endl;
 
         // Test K-bar series

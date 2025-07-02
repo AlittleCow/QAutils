@@ -540,7 +540,7 @@ TDX_EXPORT(TdxServer_SendKBar)
                     kbar.year, kbar.month, kbar.day, kbar.hour, kbar.minute);
             qaKbar.timestamp = timestamp;
             
-            json response = client->testSingleKBar(qaKbar);
+            json response = client->testSingleKBar(qaKbar, period);
             if (response.contains("status") && response["status"] == "success") {
                 log_debug("K-bar sent successfully: symbol=%s, period=%s, index=%d", 
                          symbol.c_str(), period.c_str(), requestedIndex);

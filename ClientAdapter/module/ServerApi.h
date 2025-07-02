@@ -137,6 +137,15 @@ public:
     json testSingleKBar(const KBarData& kbar_data);
 
     /**
+     * @brief Send single K-bar data to server with period information
+     * 
+     * @param kbar_data The K-bar data to send
+     * @param period The period/timeframe for the K-bar data
+     * @return json Server response
+     */
+    json testSingleKBar(const KBarData& kbar_data, const std::string& period);
+
+    /**
      * @brief Send K-bar data series to server
      * 
      * @param symbol The symbol for the K-bar series
