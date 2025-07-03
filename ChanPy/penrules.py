@@ -277,6 +277,8 @@ class PenRuleValidator:
             'rule_results': {}
         }
         
+        self.logger.debug(f"Validating pen:\nstart_fractal={start_fractal}\n  end_fractal={end_fractal}")
+
         for rule in self.rules:
             try:
                 result = rule.validate(start_fractal, end_fractal, pen_kbars, self.config)
@@ -298,95 +300,16 @@ class PenRuleValidator:
         
         is_valid = len(failed_rules) == 0
         
-        self.logger.debug(f"Pen validation: {'PASSED' if is_valid else 'FAILED'} "
-                         f"({validation_details['passed_rules']}/{validation_details['total_rules']} rules passed)")
+        if is_valid:
+            self.logger.info(f"Pen validation: PASSED "
+                           f"({validation_details['passed_rules']}/{validation_details['total_rules']} rules passed)")
+        else:
+            self.logger.debug(f"Pen validation: FAILED "
+                            f"({validation_details['passed_rules']}/{validation_details['total_rules']} rules passed)")
         
         return is_valid, failed_rules, validation_details
     
-    def assess_pen_quality(self, pen: ChanPen) -> Tuple[PenQuality, Dict[str, Any]]:
-        """
-        Assess pen quality based on various criteria
-        
-        Args:
-            pen: Pen to assess
-            
-        Returns:
-            Tuple of (quality_rating, quality_details)
-        """
-        quality_score = 0
-        quality_details = {
-            'length_score': 0,
-            'kbar_count_score': 0,
-            'trend_consistency_score': 0,
-            'fractal_strength_score': 0,
-            'total_score': 0
-        }
-        
-        # Length score (0-25 points)
-        avg_price = (pen.start_price + pen.end_price) / 2
-        length_ratio = pen.length / avg_price
-        if length_ratio > 0.05:  # > 5%
-            quality_details['length_score'] = 25
-        elif length_ratio > 0.02:  # > 2%
-            quality_details['length_score'] = 20
-        elif length_ratio > 0.01:  # > 1%
-            quality_details['length_score'] = 15
-        elif length_ratio > 0.005:  # > 0.5%
-            quality_details['length_score'] = 10
-        else:
-            quality_details['length_score'] = 5
-        
-        # Kbar count score (0-25 points)
-        kbar_count = pen.kbar_count
-        if kbar_count >= 20:
-            quality_details['kbar_count_score'] = 25
-        elif kbar_count >= 15:
-            quality_details['kbar_count_score'] = 20
-        elif kbar_count >= 10:
-            quality_details['kbar_count_score'] = 15
-        elif kbar_count >= 7:
-            quality_details['kbar_count_score'] = 10
-        else:
-            quality_details['kbar_count_score'] = 5
-        
-        # Trend consistency score (0-25 points)
-        # This would require detailed trend analysis
-        quality_details['trend_consistency_score'] = 20  # Default good score
-        
-        # Fractal strength score (0-25 points)
-        start_strength = getattr(pen.start_fractal, 'strength', 3)
-        end_strength = getattr(pen.end_fractal, 'strength', 3)
-        avg_strength = (start_strength + end_strength) / 2
-        
-        if avg_strength >= 5:
-            quality_details['fractal_strength_score'] = 25
-        elif avg_strength >= 4:
-            quality_details['fractal_strength_score'] = 20
-        elif avg_strength >= 3:
-            quality_details['fractal_strength_score'] = 15
-        else:
-            quality_details['fractal_strength_score'] = 10
-        
-        # Calculate total score
-        quality_details['total_score'] = (
-            quality_details['length_score'] +
-            quality_details['kbar_count_score'] +
-            quality_details['trend_consistency_score'] +
-            quality_details['fractal_strength_score']
-        )
-        
-        # Determine quality rating
-        if quality_details['total_score'] >= 85:
-            quality_rating = PenQuality.EXCELLENT
-        elif quality_details['total_score'] >= 70:
-            quality_rating = PenQuality.GOOD
-        elif quality_details['total_score'] >= 55:
-            quality_rating = PenQuality.FAIR
-        else:
-            quality_rating = PenQuality.POOR
-        
-        return quality_rating, quality_details
-    
+
     def analyze_pen_breaking(self, pen: ChanPen, current_price: float, 
                            current_kbars: List['Kbar']) -> Dict[str, Any]:
         """

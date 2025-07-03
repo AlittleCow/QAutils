@@ -45,11 +45,19 @@ class ChanPen:
     break_type: PenBreakType = PenBreakType.NONE
     break_price: Optional[float] = None
     merged_kbars: Optional[List[MergedKbar]] = None  # Merged kbars in the pen
+    # Validation result fields
+    is_valid: bool = False
+    failed_rules: Optional[List[str]] = None
+    validation_details: Optional[Dict[str, Any]] = None
     
     def __post_init__(self):
         """Calculate pen properties after initialization"""
         if self.merged_kbars is None:
             self.merged_kbars = []
+        if self.failed_rules is None:
+            self.failed_rules = []
+        if self.validation_details is None:
+            self.validation_details = {}
         self._calculate_properties()
     
     def _calculate_properties(self):
@@ -96,12 +104,14 @@ class ChanPen:
     def __repr__(self) -> str:
         """String representation of the pen"""
         direction_str = "UP  " if self.direction == PenDirection.UP else "DOWN"
+        valid_str = "VALID" if self.is_valid else "INVALID"
         return (f"ChanPen(direction={direction_str}, "
                 f"start={self.start_time}, "
                 f"end={self.end_time}, "
                 f"raw_kbars={self.kbar_count:2d}, "
                 f"merged_kbars={self.merged_kbar_count:2d}, "
-                f"length={self.length:8.4f})")
+                f"length={self.length:8.4f}, "
+                f"status={valid_str})")
 
 
 class PenProcessor:
@@ -257,14 +267,10 @@ class PenProcessor:
             end_fractal: Ending fractal
             
         Returns:
-            ChanPen object if valid, None otherwise
+            ChanPen object with validation results stored
         """
         # Validate fractal types are different
         if start_fractal.fractal_type == end_fractal.fractal_type:
-            return None
-        
-        # Validate with raw kbars
-        if not self.validate_pen_with_raw_kbars(start_fractal, end_fractal):
             return None
         
         # Determine pen direction
@@ -279,23 +285,7 @@ class PenProcessor:
         # Calculate pen length
         length = abs(end_fractal.price - start_fractal.price)
         
-        # Check minimum length requirement
-        if length < self.min_pen_length:
-            return None
-        
-        # Advanced pen validation using pen rules (if validator is provided)
-        if self.pen_validator:
-            is_valid, failed_rules, validation_details = self.pen_validator.validate_pen(
-                start_fractal, end_fractal, pen_kbars
-            )
-            
-            if not is_valid:
-                self.logger.debug(f"Pen validation failed: {[rule.value for rule in failed_rules]}")
-                self.logger.debug(f"Validation details: {validation_details}")
-                return None
-            
-            self.logger.debug(f"Pen validation passed: {validation_details['passed_rules']}/{validation_details['total_rules']} rules")
-
+        # Create pen with basic validation
         pen = ChanPen(
             start_fractal=start_fractal,
             end_fractal=end_fractal,
@@ -304,20 +294,61 @@ class PenProcessor:
             low=0.0,   # Will be calculated in __post_init__
             length=length,
             raw_kbars=pen_kbars,
-            confirmed=True,
+            confirmed=False,  # Will be set based on validation
             merged_kbars=[]  # Initialize as empty list - to be populated later
         )
         
-        # Assess pen quality if validator is available
+        # Perform validation and store results
+        is_valid = True
+        failed_rules = []
+        validation_details = {}
+        
+        # Basic validation checks
+        if length < self.min_pen_length:
+            is_valid = False
+            failed_rules.append("min_pen_length")
+        
+        if len(pen_kbars) < self.min_kbar_count:
+            is_valid = False
+            failed_rules.append("min_kbar_count")
+        
+        # Validate with raw kbars
+        if not self.validate_pen_with_raw_kbars(start_fractal, end_fractal):
+            is_valid = False
+            failed_rules.append("raw_kbar_validation")
+        
+        # Advanced pen validation using pen rules (if validator is provided)
         if self.pen_validator:
-            quality_rating, quality_details = self.pen_validator.assess_pen_quality(pen)
-            self.logger.debug(f"Pen quality: {quality_rating.value} (score: {quality_details['total_score']})")
+            rule_valid, rule_failed_rules, rule_validation_details = self.pen_validator.validate_pen(
+                start_fractal, end_fractal, pen_kbars
+            )
+            
+            if not rule_valid:
+                is_valid = False
+                failed_rules.extend([rule.value for rule in rule_failed_rules])
+                validation_details.update(rule_validation_details)
+                self.logger.debug(f"Pen validation failed: {[rule.value for rule in rule_failed_rules]}")
+                self.logger.debug(f"Validation details: {rule_validation_details}")
+            else:
+                is_valid = True
+                validation_details.update(rule_validation_details)
+                self.logger.info(f"Pen validation passed: {rule_validation_details.get('passed_rules', 0)}/{rule_validation_details.get('total_rules', 0)} rules")
+        
+        # Store validation results in pen
+        pen.is_valid = is_valid
+        pen.failed_rules = failed_rules
+        pen.validation_details = validation_details
+        pen.confirmed = is_valid
         
         return pen
     
     def process_fractals(self, fractals: List[Fractal]) -> List[ChanPen]:
         """
-        Process a list of fractals to create pens
+        Process a list of fractals to create pens using the correct 3-step flow
+        
+        Step 1: Create pens from all consecutive fractals and store validation results
+        Step 2: Process every 3 consecutive pens to create new pens
+        Step 3: Filter to only keep valid pens
         
         Args:
             fractals: List of fractals in chronological order
@@ -328,21 +359,33 @@ class PenProcessor:
         if len(fractals) < 2:
             return []
         
-        pens = []
-        
+        # Step 1: Create pens from all consecutive fractals
+        initial_pens = []
+        self.logger.info(f"Step 1: Creating pens from {len(fractals)} fractals\n\n")
         for i in range(len(fractals) - 1):
             start_fractal = fractals[i]
             end_fractal = fractals[i + 1]
             
             pen = self.create_pen(start_fractal, end_fractal)
             if pen:
-                pens.append(pen)
-                self.logger.debug(f"Pen: {pen}")
+                initial_pens.append(pen)
+                self.logger.debug(f"Initial pen: {pen} - Valid: {pen.is_valid}")
         
-        self.pens = pens
-        self.logger.info(f"Created {len(pens)} valid pens from {len(fractals)} fractals")
+        passed_count = sum(1 for pen in initial_pens if pen.is_valid)
+        self.logger.info(f"Step 1: Created {len(initial_pens)} initial pens from {len(fractals)} fractals ({passed_count} passed validation)\n\n")
         
-        return pens
+        # Step 2: Process every 3 consecutive pens
+        processed_pens = self.process_three_consecutive_pens(initial_pens)
+        self.logger.info(f"Step 2: Processed into {len(processed_pens)} pens")
+        
+        # Step 3: Filter to only keep valid pens
+        valid_pens = [pen for pen in processed_pens if pen.is_valid]
+        self.logger.info(f"Step 3: Filtered to {len(valid_pens)} valid pens")
+        
+        self.pens = valid_pens
+        self.logger.info(f"Final result: {len(valid_pens)} valid pens from {len(fractals)} fractals")
+        
+        return valid_pens
     
     def analyze_pen_breaking(self, pen: ChanPen, current_price: float) -> PenBreakType:
         """
@@ -398,6 +441,14 @@ class PenProcessor:
         """Get all pens that have been broken"""
         return [pen for pen in self.pens if pen.break_type != PenBreakType.NONE]
     
+    def get_valid_pens(self) -> List[ChanPen]:
+        """Get all valid pens"""
+        return [pen for pen in self.pens if pen.is_valid]
+    
+    def get_invalid_pens(self) -> List[ChanPen]:
+        """Get all invalid pens"""
+        return [pen for pen in self.pens if not pen.is_valid]
+    
     def get_pen_sequence_validity(self) -> bool:
         """
         Check if the pen sequence is valid (alternating directions)
@@ -431,21 +482,26 @@ class PenProcessor:
         Get statistics about the pens
         
         Returns:
-            Dictionary with pen statistics
+            Dictionary with pen statistics including validation results
         """
         if not self.pens:
             return {
                 'total_pens': 0,
                 'upward_pens': 0,
                 'downward_pens': 0,
+                'valid_pens': 0,
+                'invalid_pens': 0,
                 'average_length': 0.0,
                 'max_length': 0.0,
                 'min_length': 0.0,
-                'broken_pens': 0
+                'broken_pens': 0,
+                'validation_rate': 0.0
             }
         
         upward_count = len(self.get_upward_pens())
         downward_count = len(self.get_downward_pens())
+        valid_count = len([pen for pen in self.pens if pen.is_valid])
+        invalid_count = len([pen for pen in self.pens if not pen.is_valid])
         lengths = [pen.length for pen in self.pens]
         broken_count = len(self.get_broken_pens())
         
@@ -453,10 +509,13 @@ class PenProcessor:
             'total_pens': len(self.pens),
             'upward_pens': upward_count,
             'downward_pens': downward_count,
+            'valid_pens': valid_count,
+            'invalid_pens': invalid_count,
             'average_length': sum(lengths) / len(lengths),
             'max_length': max(lengths),
             'min_length': min(lengths),
-            'broken_pens': broken_count
+            'broken_pens': broken_count,
+            'validation_rate': valid_count / len(self.pens) if self.pens else 0.0
         }
     
     def clear(self):
@@ -531,4 +590,55 @@ class PenProcessor:
         
         failed_rule_names = [rule.value for rule in failed_rules]
         
-        return is_valid, failed_rule_names, validation_details 
+        return is_valid, failed_rule_names, validation_details
+    
+    def process_three_consecutive_pens(self, pen_list: List[ChanPen]) -> List[ChanPen]:
+        """
+        Process every 3 consecutive pens to create new pens
+        
+        For every 3 consecutive pens, create a new pen using:
+        - Start fractal of pen 1
+        - End fractal of pen 3
+        - Validate the new pen with pen validator
+        
+        Args:
+            pen_list: List of pens to process
+            
+        Returns:
+            List of new pens created from 3 consecutive pens
+        """
+        if len(pen_list) < 3:
+            return pen_list  # Not enough pens to process
+        
+        new_pens = []
+        
+        # Process every 3 consecutive pens
+        for i in range(0, len(pen_list) - 2, 3):
+            pen1 = pen_list[i]
+            pen2 = pen_list[i + 1]
+            pen3 = pen_list[i + 2]
+            
+            # Create new pen from pen1's start to pen3's end
+            new_pen = self.create_pen(pen1.start_fractal, pen3.end_fractal)
+            
+            if new_pen:
+                # Add information about the source pens
+                new_pen.validation_details = new_pen.validation_details or {}
+                new_pen.validation_details['source_pens'] = [
+                    f"Pen1({pen1.start_time}-{pen1.end_time})",
+                    f"Pen2({pen2.start_time}-{pen2.end_time})",
+                    f"Pen3({pen3.start_time}-{pen3.end_time})"
+                ]
+                
+                new_pens.append(new_pen)
+                self.logger.debug(f"Created new pen from 3 consecutive pens: {new_pen}")
+        
+        # Handle remaining pens (if pen_list length is not divisible by 3)
+        remaining_start = len(pen_list) - (len(pen_list) % 3)
+        if remaining_start < len(pen_list):
+            remaining_pens = pen_list[remaining_start:]
+            new_pens.extend(remaining_pens)
+            self.logger.debug(f"Added {len(remaining_pens)} remaining pens")
+        
+        self.logger.info(f"Processed {len(pen_list)} pens into {len(new_pens)} new pens")
+        return new_pens 
