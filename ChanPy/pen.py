@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from enum import Enum
 from .fractal import Fractal, FractalType
 from .mergekbar import MergedKbar
+from .chantypes import KBarRelationship
 
 if TYPE_CHECKING:
     from .chan import Kbar
@@ -618,20 +619,27 @@ class PenProcessor:
             pen2 = pen_list[i + 1]
             pen3 = pen_list[i + 2]
             
-            # Create new pen from pen1's start to pen3's end
-            new_pen = self.create_pen(pen1.start_fractal, pen3.end_fractal)
+            # Analyze the 3 consecutive pens using KBarRelationship
+            pen_relationship = self.get_three_pens_relationship(pen1, pen2, pen3)
+            self.logger.debug(f"Three pen relationship: {pen_relationship.value} - {pen_relationship.get_description()}")
             
-            if new_pen:
-                # Add information about the source pens
-                new_pen.validation_details = new_pen.validation_details or {}
-                new_pen.validation_details['source_pens'] = [
-                    f"Pen1({pen1.start_time}-{pen1.end_time})",
-                    f"Pen2({pen2.start_time}-{pen2.end_time})",
-                    f"Pen3({pen3.start_time}-{pen3.end_time})"
-                ]
+            # # Create new pen from pen1's start to pen3's end
+            # new_pen = self.create_pen(pen1.start_fractal, pen3.end_fractal)
+            
+            # if new_pen:
+            #     # Add information about the source pens and their relationship
+            #     new_pen.validation_details = new_pen.validation_details or {}
+            #     new_pen.validation_details['source_pens'] = [
+            #         f"Pen1({pen1.start_time}-{pen1.end_time})",
+            #         f"Pen2({pen2.start_time}-{pen2.end_time})",
+            #         f"Pen3({pen3.start_time}-{pen3.end_time})"
+            #     ]
+            #     new_pen.validation_details['three_pen_relationship'] = pen_relationship.value
+            #     new_pen.validation_details['three_pen_relationship_description'] = pen_relationship.get_description()
                 
-                new_pens.append(new_pen)
-                self.logger.debug(f"Created new pen from 3 consecutive pens: {new_pen}")
+            #     new_pens.append(new_pen)
+            #     self.logger.debug(f"Created new pen from 3 consecutive pens: {new_pen}")
+            #     self.logger.debug(f"Three pen relationship: {pen_relationship.value} - {pen_relationship.get_description()}")
         
         # Handle remaining pens (if pen_list length is not divisible by 3)
         remaining_start = len(pen_list) - (len(pen_list) % 3)
@@ -641,4 +649,40 @@ class PenProcessor:
             self.logger.debug(f"Added {len(remaining_pens)} remaining pens")
         
         self.logger.info(f"Processed {len(pen_list)} pens into {len(new_pens)} new pens")
-        return new_pens 
+        return new_pens
+    
+    def get_three_pens_relationship(self, pen1: ChanPen, pen2: ChanPen, pen3: ChanPen) -> KBarRelationship:
+        """
+        Get the KBarRelationship between 3 consecutive pens
+        
+        This function treats:
+        - pen1 as kbar1 (using pen1's low and high)
+        - pen3 as kbar2 (using pen3's low and high)
+        - pen2 is used for context but not directly in the relationship calculation
+        
+        Args:
+            pen1: First pen (treated as kbar1)
+            pen2: Second pen (for context)
+            pen3: Third pen (treated as kbar2)
+            
+        Returns:
+            KBarRelationship: The relationship between pen1 and pen3
+        """
+        # Use pen1's low and high as kbar1 (d1, g1)
+        d1 = pen1.low   # Low of pen1
+        g1 = pen1.high  # High of pen1
+        
+        # Use pen3's low and high as kbar2 (d2, g2)
+        d2 = pen3.low   # Low of pen3
+        g2 = pen3.high  # High of pen3
+        
+        # Get the relationship using KBarRelationship
+        relationship = KBarRelationship.determine_relationship(d1, g1, d2, g2)
+        
+        self.logger.debug(f"Three pen relationship analysis:")
+        self.logger.debug(f"{pen1}")
+        self.logger.debug(f"{pen2}")
+        self.logger.debug(f"{pen3}")
+        self.logger.debug(f"  Relationship: {relationship.value} - {relationship.get_description()}")
+        
+        return relationship 
