@@ -24,6 +24,39 @@ if TYPE_CHECKING:
     from .chan import Kbar
 
 
+def convert_df_to_kbars(kbar_df) -> List['Kbar']:
+    """
+    Convert a DataFrame of K-bar data to a list of Kbar objects.
+    
+    Args:
+        kbar_df: Pandas DataFrame containing K-bar data with columns:
+                - ts: timestamp (string)
+                - open: open price (float)
+                - high: high price (float)
+                - low: low price (float)
+                - close: close price (float)
+                - volume: volume (int)
+                
+    Returns:
+        List of Kbar objects
+    """
+    from .chantypes import Kbar
+    
+    kbars = []
+    for _, row in kbar_df.iterrows():
+        kbar = Kbar(
+            timestamp=str(row['ts']),
+            open=float(row['open']),
+            high=float(row['high']),
+            low=float(row['low']),
+            close=float(row['close']),
+            volume=int(row['volume'])
+        )
+        kbars.append(kbar)
+    
+    return kbars
+
+
 @dataclass
 class ChanState:
     """
@@ -206,8 +239,9 @@ class ChanContext:
                         symbol, exchange, period, limit=limit
                     )
                     if not kbar_df.empty:
-                        # Convert DataFrame to Kbar objects (would need proper implementation)
-                        # state.current_kbars = convert_df_to_kbars(kbar_df)
+                        # Convert DataFrame to Kbar objects
+                        state.current_kbars = convert_df_to_kbars(kbar_df)
+                        state.latest_kbar = state.current_kbars[-1] if state.current_kbars else None
                         self.logger.info(f"Loaded {len(kbar_df)} K-bars from database")
                 except Exception as e:
                     self.logger.debug(f"K-bar data not available: {e}")
