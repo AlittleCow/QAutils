@@ -272,7 +272,7 @@ class ChanContext:
                         # Convert DataFrame to Kbar objects
                         state.current_kbars = convert_df_to_kbars(kbar_df)
                         state.latest_kbar = state.current_kbars[-1] if state.current_kbars else None
-                        self.logger.info(f"Loaded {len(kbar_df)} K-bars from database{time_range_info}")
+                        self.logger.info(f"Initialize Context with {len(kbar_df)} K-bars from database{time_range_info}")
                 except Exception as e:
                     self.logger.debug(f"K-bar data not available: {e}")
             
@@ -314,7 +314,7 @@ class ChanContext:
         state.latest_kbar = kbars[-1] if kbars else None
         state.update_timestamp()
         
-        self.logger.debug(f"Updated {len(kbars)} K-bars for {symbol}.{exchange} ({period})")
+        self.logger.debug(f"Updated Context with {len(kbars)} K-bars for {symbol}.{exchange} ({period})")
     
     def update_merged_kbars(self, merged_kbars: List[MergedKbar], 
                            symbol: Optional[str] = None, exchange: Optional[str] = None, 

@@ -50,7 +50,9 @@ class ChanProcessor:
                  exchange: Optional[str] = None,
                  period: Optional[str] = None,
                  start_time: Optional[str] = None,
-                 end_time: Optional[str] = None):
+                 end_time: Optional[str] = None,
+                 auto_load_data: bool = True,
+                 kbar_limit: int = 1000):
         """
         Initialize Chan Processor
         
@@ -65,12 +67,15 @@ class ChanProcessor:
             period: Time period for context tracking
             start_time: Start time for data range (format: "YYYY-MM-DD HH:MM:SS")
             end_time: End time for data range (format: "YYYY-MM-DD HH:MM:SS")
+            auto_load_data: Whether to automatically load data from database during initialization
+            kbar_limit: Maximum number of K-bars to load from database
         """
         self.logger = logging.getLogger(f"{__name__}")
         
         # Store time range parameters
         self.start_time = start_time
         self.end_time = end_time
+        self.kbar_limit = kbar_limit
         
         # Initialize context management
         self.context = context if context is not None else ChanContext()
@@ -104,17 +109,20 @@ class ChanProcessor:
         self.pens: List[ChanPen] = []
         self.lines: List[ChanLine] = []
         
-        # Initialize from database if context is available
-        if all([self.context, symbol, exchange, period]):
+        # Initialize from database if context is available and auto_load_data is True
+        if auto_load_data and all([self.context, symbol, exchange, period]):
             try:
                 # Type guard: we know these are not None after the check above
                 assert symbol is not None
                 assert exchange is not None
                 assert period is not None
-                
-                self.context.initialize_from_database(symbol, exchange, period, start_time=start_time, end_time=end_time)
+                self.logger.info("Initializing Chan processor from database context")
+                self.context.initialize_from_database(symbol, exchange, period, 
+                                                     limit=kbar_limit, 
+                                                     start_time=start_time, 
+                                                     end_time=end_time)
                 self._load_from_context()
-                self.logger.info("Initialized Chan processor from database context")
+                self.logger.info("Initialized Chan processor from database context successfully")
             except Exception as e:
                 self.logger.warning(f"Failed to initialize from database: {e}")
         
@@ -134,15 +142,22 @@ class ChanProcessor:
         results = {}
         
         try:
-            # Update context with raw kbars
-            self.logger.info(f"Updating context with {len(kbars)} raw kbars")
+            # Update context with raw kbars only if they're different from current context
             if self.context and all([self.symbol, self.exchange, self.period]):
                 # Type guard: we know these are not None after the check above
                 assert self.symbol is not None
                 assert self.exchange is not None
                 assert self.period is not None
                 
-                self.context.update_kbars(kbars, self.symbol, self.exchange, self.period)
+                # Get current context state
+                current_state = self.context.get_state(self.symbol, self.exchange, self.period)
+                
+                # Only update context if the K-bars are different (to avoid duplicate updates)
+                if not current_state.current_kbars or len(current_state.current_kbars) != len(kbars):
+                    self.logger.info(f"Updating context with {len(kbars)} raw kbars")
+                    self.context.update_kbars(kbars, self.symbol, self.exchange, self.period)
+                else:
+                    self.logger.debug(f"Context already has {len(current_state.current_kbars)} K-bars, skipping update")
             
             # Step 1: Merge kbar process for consecutive kbars
             self.logger.info("Step 1: Processing kbar merging")
@@ -787,4 +802,34 @@ class ChanProcessor:
             limit=limit,
             start_time=self.start_time,
             end_time=self.end_time
-        ) 
+        )
+
+    def process_kbars_auto(self) -> Dict[str, Any]:
+        """
+        Process K-bars automatically using data from context/database.
+        
+        This method loads K-bars from the database using the configured
+        parameters and processes them through the complete Chan pipeline.
+        
+        Returns:
+            Complete analysis results
+        """
+        if not all([self.symbol, self.exchange, self.period]):
+            raise ValueError("Symbol, exchange, and period must be set before auto-processing")
+        
+        # Type guard: we know these are not None after the check above
+        assert self.symbol is not None
+        assert self.exchange is not None
+        assert self.period is not None
+        
+        # Load K-bars from database through context
+        kbars = self.load_kbars_from_context(limit=self.kbar_limit)
+        
+        if not kbars:
+            self.logger.warning("No K-bar data available for processing")
+            return {'status': 'No data available', 'summary': {}}
+        
+        self.logger.info(f"Loaded {len(kbars)} K-bars from database for processing")
+        
+        # Process the loaded K-bars
+        return self.process_kbars(kbars) 
