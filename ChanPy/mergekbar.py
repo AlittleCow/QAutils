@@ -9,7 +9,7 @@ import logging
 from typing import List, Optional, TYPE_CHECKING
 from dataclasses import dataclass, field
 from enum import Enum
-from .chantypes import KBarRelationship, get_kbar_objects_relationship, Direction, KbarShape, get_direction_from_kbar_shape
+from .chantypes import KBarRelationship, get_kbar_objects_relationship, Direction, KbarShape
 
 if TYPE_CHECKING:
     from .chan import Kbar
@@ -245,7 +245,7 @@ class ChanMergeKbarDirection:
                 return direction
         
         # Second, try to use KbarShape information if no relationship
-        shape_direction = get_direction_from_kbar_shape(kbar1, kbar2)
+        shape_direction = self._get_direction_from_kbar_shape(kbar1, kbar2)
         if shape_direction != Direction.UNKNOWN:
             self.logger.debug(f"Using KbarShape-based direction: {shape_direction}")
             return shape_direction
@@ -766,33 +766,4 @@ class KbarMerger:
         relationship = self._get_merge_relationship(kbar1, kbar2)
         
         # Use the ChanMergeKbarDirection class to determine the direction
-        return self.direction_determiner.determine_merge_direction(kbar1, kbar2, relationship)
-    
-    def _get_direction_from_single_kbar_shape(self, kbar: 'Kbar') -> Direction:
-        """
-        Determine direction from a single kbar's shape
-        
-        This method is used for the first mergekbar case when there's only one kbar.
-        
-        Args:
-            kbar: The kbar to analyze
-            
-        Returns:
-            Direction based on the kbar's shape
-        """
-        try:
-            shape = KbarShape.determine_shape(kbar.open, kbar.high, kbar.low, kbar.close)
-            
-            self.logger.debug(f"Single kbar shape: {shape.name}")
-            
-            if shape.is_bullish():
-                return Direction.UP
-            elif shape.is_bearish():
-                return Direction.DOWN
-            else:
-                # For doji patterns, return UNKNOWN
-                return Direction.UNKNOWN
-                
-        except Exception as e:
-            self.logger.debug(f"Failed to determine direction from single KbarShape: {e}")
-            return Direction.UNKNOWN 
+        return self.direction_determiner.determine_merge_direction(kbar1, kbar2, relationship) 
