@@ -312,16 +312,17 @@ class ChanProcessor:
                 # Update context with all current kbars (this should be efficient in the context implementation)
                 self.context.update_kbars(self.raw_kbars, self.symbol, self.exchange, self.period)
             
-            # Step 1: Smart K-bar merging - only process recent K-bars for merging
+            # Step 1: Smart K-bar merging - use context to get last pen and start from its raw kbars
             self.logger.debug("Step 1: Processing new K-bar for merging")
             
             # Store previous counts to detect changes
             prev_merged_count = len(self.merged_kbars)
             
-            # Process only the last few K-bars to check for merging changes
-            # This is much more efficient than re-processing everything
-            merge_window = min(5, len(self.raw_kbars))
-            recent_kbars = self.raw_kbars[-merge_window:]
+            # Get the starting point for reprocessing based on last pen from context
+            start_index = self._get_reprocessing_start_index()
+            
+            # Process from the determined start index
+            recent_kbars = self.raw_kbars[start_index:]
             
             # Re-process only recent merged K-bars
             recent_merged = self.kbar_merger.process_kbar_sequence(recent_kbars)
@@ -338,7 +339,7 @@ class ChanProcessor:
                 results['step1_merge'] = {
                     'action': 'updated_merged_kbars',
                     'merged_kbar_count': len(self.merged_kbars),
-                    'window_size': merge_window,
+                    'window_size': len(recent_kbars),
                     'previous_count': prev_merged_count,
                     'current_count': len(self.merged_kbars)
                 }
@@ -346,7 +347,7 @@ class ChanProcessor:
                 results['step1_merge'] = {
                     'action': 'no_change',
                     'merged_kbar_count': len(self.merged_kbars),
-                    'window_size': merge_window
+                    'window_size': len(recent_kbars)
                 }
             
             # Step 2: Check for new fractals only if merged K-bars changed
@@ -1101,3 +1102,48 @@ class ChanProcessor:
             return {'status': 'No data available', 'summary': {}}
         # Process the loaded K-bars
         return self.process_kbars(kbars) 
+
+    def _get_reprocessing_start_index(self) -> int:
+        """
+        Get the starting index for reprocessing based on the last pen from context or current pens.
+        
+        This method finds the raw kbar index that corresponds to the start time of the last pen,
+        ensuring we reprocess from the beginning of the current incomplete structure.
+        
+        Returns:
+            Starting index in raw_kbars for reprocessing
+        """
+        # First try to get the last pen from context
+        if self.context and all([self.symbol, self.exchange, self.period]):
+            # Type guard: we know these are not None after the check above
+            assert self.symbol is not None
+            assert self.exchange is not None
+            assert self.period is not None
+            
+            try:
+                latest_pen = self.context.get_latest_pen(self.symbol, self.exchange, self.period)
+                if latest_pen:
+                    # Find the raw kbar index that corresponds to the pen's start time
+                    start_time = latest_pen.start_time
+                    for i, kbar in enumerate(self.raw_kbars):
+                        if kbar.timestamp >= start_time:
+                            # Start from a few kbars before to ensure we don't miss any merging
+                            return max(0, i - 2)
+                    # If we don't find a matching timestamp, fall back to a reasonable window
+                    return max(0, len(self.raw_kbars) - 10)
+            except Exception as e:
+                self.logger.debug(f"Could not get latest pen from context: {e}")
+        
+        # Fallback to current pens if context is not available
+        if self.pens:
+            last_pen = self.pens[-1]
+            start_time = last_pen.start_time
+            for i, kbar in enumerate(self.raw_kbars):
+                if kbar.timestamp >= start_time:
+                    # Start from a few kbars before to ensure we don't miss any merging
+                    return max(0, i - 2)
+            # If we don't find a matching timestamp, fall back to a reasonable window
+            return max(0, len(self.raw_kbars) - 10)
+        
+        # If no pens available, use a conservative approach with a small window
+        return max(0, len(self.raw_kbars) - 5) 
