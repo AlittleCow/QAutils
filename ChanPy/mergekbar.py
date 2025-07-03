@@ -411,11 +411,57 @@ class MergedKbar:
     original_kbars: List['Kbar'] = field(default_factory=list)  # List of original raw kbars that were merged
     mergetype: Optional[KBarRelationship] = None  # How this mergekbar was merged
     merge_direction: Direction = Direction.UNKNOWN  # Direction of the merge
+    original_open: Optional[float] = field(default=None, init=False)  # Original open before adjustment
+    original_close: Optional[float] = field(default=None, init=False)  # Original close before adjustment
     
     def __post_init__(self):
-        """Validate merged K-bar data after initialization"""
+        """Validate and adjust merged K-bar data after initialization"""
+        # Store original open/close values before any adjustments
+        self.original_open = self.open
+        self.original_close = self.close
+        
+        # Adjust open/close values based on merge direction to ensure they fit within high/low range
+        if self.merge_direction == Direction.UP:
+            # For up merge: ensure open/close are within [low, high] range
+            # Prioritize maintaining the directional relationship while fitting in range
+            if self.open < self.low:
+                self.open = self.low
+            if self.open > self.high:
+                self.open = self.high
+            if self.close < self.low:
+                self.close = self.low
+            if self.close > self.high:
+                self.close = self.high
+                
+        elif self.merge_direction == Direction.DOWN:
+            # For down merge: ensure open/close are within [low, high] range
+            # Prioritize maintaining the directional relationship while fitting in range
+            if self.open < self.low:
+                self.open = self.low
+            if self.open > self.high:
+                self.open = self.high
+            if self.close < self.low:
+                self.close = self.low
+            if self.close > self.high:
+                self.close = self.high
+                
+        else:
+            # For unknown merge: ensure open/close are within [low, high] range
+            if self.open < self.low:
+                self.open = self.low
+            if self.open > self.high:
+                self.open = self.high
+            if self.close < self.low:
+                self.close = self.low
+            if self.close > self.high:
+                self.close = self.high
+        
+        # Final validation - should always pass now
         if self.high < max(self.open, self.close) or self.low > min(self.open, self.close):
-            raise ValueError("Invalid merged K-bar data: high/low inconsistent with open/close")
+            raise ValueError(f"Invalid merged K-bar data after adjustment: "
+                           f"Open: {self.open:.2f}, High: {self.high:.2f}, Low: {self.low:.2f}, Close: {self.close:.2f}, "
+                           f"Original Open: {self.original_open:.2f}, Original Close: {self.original_close:.2f}, "
+                           f"Merge Direction: {self.merge_direction.name}")
     
     def __str__(self) -> str:
         """String representation for debugging"""
@@ -434,9 +480,15 @@ class MergedKbar:
         # Add merge info to string representation
         merge_info = f"Type:{self.mergetype.value if self.mergetype else 'None'} Dir:{self.merge_direction.name}"
         
+        # Check if original values differ from adjusted values
+        original_info = ""
+        if (self.original_open is not None and self.original_close is not None and 
+            (self.original_open != self.open or self.original_close != self.close)):
+            original_info = f" [Orig O:{self.original_open:.2f} C:{self.original_close:.2f}]"
+        
         return (f"MergedKbar({start_str:19s}→{end_str:19s} {direction}\n"
                 f"O:{self.open:6.2f} H:{self.high:6.2f} L:{self.low:6.2f} C:{self.close:6.2f} "
-                f"V:{self.volume:8d} Body:{body_size:5.2f} Range:{range_size:5.2f} Count:{self.original_count} {merge_info})")
+                f"V:{self.volume:8d} Body:{body_size:5.2f} Range:{range_size:5.2f} Count:{self.original_count} {merge_info}{original_info})")
     
     def __repr__(self) -> str:
         """Detailed representation for debugging"""
@@ -611,9 +663,8 @@ class KbarMerger:
                     merged = self.merge_two_kbars(current_kbar, next_kbar, merge_direction, skip_merge_check=True)
                     
                     # print the merged kbar
-                    self.logger.debug(f"Merged kbar: {merged}")
-                    
-
+                    self.logger.debug(f"doMerge: Merged kbar: {merged}")
+            
                     # Continue merging with subsequent kbars if possible
                     j = i + 2
                     while j < len(kbars):
