@@ -76,9 +76,31 @@ except ImportError:
 # Create a custom database manager configuration for SQLite
 def create_sqlite_database_manager():
     """Create a database manager configured for SQLite with the correct path."""
-    # Absolute path to the database
+    # Absolute path to the databases - using the correct database files
     db_path = os.path.join(parent_dir, 'Server', 'tdx_db', 'stock_kbar.db')
     meta_db_path = os.path.join(parent_dir, 'Server', 'tdx_db', 'stock_meta.db')
+    chan_db_path = os.path.join(parent_dir, 'Server', 'tdx_db', 'chan_db.db')
+    
+    # Check if the database files exist
+    missing_files = []
+    if not os.path.exists(db_path):
+        missing_files.append(f"stock_kbar.db at {db_path}")
+    else:
+        print(f"✓ Found kbar database: {db_path}")
+        
+    if not os.path.exists(meta_db_path):
+        missing_files.append(f"stock_meta.db at {meta_db_path}")
+    else:
+        print(f"✓ Found meta database: {meta_db_path}")
+        
+    if not os.path.exists(chan_db_path):
+        missing_files.append(f"chan_db.db at {chan_db_path}")
+    else:
+        print(f"✓ Found chan database: {chan_db_path}")
+    
+    if missing_files:
+        print(f"Warning: Missing database files: {', '.join(missing_files)}")
+        # Don't return None, let the system try to work with available files
     
     # Ensure the directory exists
     os.makedirs(os.path.dirname(db_path), exist_ok=True)
@@ -98,6 +120,13 @@ def create_sqlite_database_manager():
             'database_path': meta_db_path,
             'timeout': 30.0,
             'check_same_thread': False
+        },
+        'chan_config': {
+            'enabled': True,
+            'database_path': chan_db_path,
+            'timeout': 30.0,
+            'check_same_thread': False,
+            'create_dir': True
         },
         'kbar_type': 'sqlite'
     }
