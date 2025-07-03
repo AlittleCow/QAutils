@@ -151,9 +151,9 @@ except Exception as e:
 DEFAULT_SYMBOL = "002120"
 DEFAULT_EXCHANGE = "SZ"
 DEFAULT_PERIOD = "daily"
-DEFAULT_LIMIT = 20
-DEFAULT_START_TIME = "2018-07-30 00:00:00"
-DEFAULT_END_TIME = "2018-09-01 00:00:00"
+DEFAULT_LIMIT = 1000
+DEFAULT_START_TIME = "2018-08-30 00:00:00"
+DEFAULT_END_TIME = "2019-06-01 00:00:00"
 
 
 def configure_analysis_parameters(symbol: Optional[str] = None, exchange: Optional[str] = None, 
