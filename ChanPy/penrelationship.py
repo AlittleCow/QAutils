@@ -207,7 +207,7 @@ class PenRelationshipHandler:
         - If no first line exists, handle 8 combinations of pen validity
         - For all valid pens: treat first pen as first line, move to p2-p3-p4
         - For not all valid pens: check 7 cases from image
-        - Green circle = valid pen, red circle = invalid pen
+        - Red circle = valid pen, green circle = invalid pen
         - First 4 cases: treat first pen as valid line
         - Rest 3 cases: bypass first pen like step 2
         
@@ -313,29 +313,29 @@ class PenRelationshipHandler:
         
         # Step 4: Handle not all pens valid case - 7 cases from image
         # According to the image description:
-        # - Green circle = valid pen, red circle = invalid pen
+        # - Red circle on black = valid pen, green circle = invalid pen
         # - First 4 cases: treat first pen as valid line
         # - Rest 3 cases: bypass first pen
         
-        # Define the 7 cases based on validity patterns
-        # Case 1: pen1=V, pen2=V, pen3=I (VVI)
-        # Case 2: pen1=V, pen2=I, pen3=V (VIV)
-        # Case 3: pen1=V, pen2=I, pen3=I (VII)
-        # Case 4: pen1=I, pen2=V, pen3=V (IVV)
-        # Case 5: pen1=I, pen2=V, pen3=I (IVI)
-        # Case 6: pen1=I, pen2=I, pen3=V (IIV)
-        # Case 7: pen1=I, pen2=I, pen3=I (III)
+        # Define the 7 cases based on validity patterns from the image
+        # Case 1: pen1=I, pen2=I, pen3=I (III) - green-green-green
+        # Case 2: pen1=I, pen2=I, pen3=V (IIV) - green-green-red
+        # Case 3: pen1=I, pen2=V, pen3=I (IVI) - green-red-green
+        # Case 4: pen1=I, pen2=V, pen3=V (IVV) - green-red-red
+        # Case 5: pen1=V, pen2=I, pen3=I (VII) - red-green-green
+        # Case 6: pen1=V, pen2=I, pen3=V (VIV) - red-green-red
+        # Case 7: pen1=V, pen2=V, pen3=I (VVI) - red-red-green
         
         # First 4 cases: treat first pen as valid line
-        if ((pen1_valid and pen2_valid and not pen3_valid) or      # Case 1: VVI
-            (pen1_valid and not pen2_valid and pen3_valid) or      # Case 2: VIV
-            (pen1_valid and not pen2_valid and not pen3_valid) or  # Case 3: VII
-            (not pen1_valid and pen2_valid and pen3_valid)):       # Case 4: IVV
+        if ((not pen1_valid and not pen2_valid and not pen3_valid) or  # Case 1: III
+            (not pen1_valid and not pen2_valid and pen3_valid) or      # Case 2: IIV
+            (not pen1_valid and pen2_valid and not pen3_valid) or      # Case 3: IVI
+            (not pen1_valid and pen2_valid and pen3_valid)):           # Case 4: IVV
             
             case_names = {
-                (True, True, False): "Case 1: VVI",
-                (True, False, True): "Case 2: VIV", 
-                (True, False, False): "Case 3: VII",
+                (False, False, False): "Case 1: III",
+                (False, False, True): "Case 2: IIV",
+                (False, True, False): "Case 3: IVI",
                 (False, True, True): "Case 4: IVV"
             }
             
