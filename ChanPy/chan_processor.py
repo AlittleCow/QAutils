@@ -197,30 +197,30 @@ class ChanProcessor:
             # Step 2: Check consecutive merged kbars for fractals
             self.logger.info("Step 2: Identifying fractals from merged kbars")  
             self.fractals = self.fractal_identifier.process_merged_kbars(self.merged_kbars)
-            # results['step2_fractals'] = {
-            #     'total_fractals': len(self.fractals),
-            #     'top_fractals': len(self.fractal_identifier.get_top_fractals()),
-            #     'bottom_fractals': len(self.fractal_identifier.get_bottom_fractals()),
-            #     'fractal_summary': self.fractal_identifier.get_fractal_summary()
-            # }
+            results['step2_fractals'] = {
+                'total_fractals': len(self.fractals),
+                'top_fractals': len(self.fractal_identifier.get_top_fractals()),
+                'bottom_fractals': len(self.fractal_identifier.get_bottom_fractals()),
+                'fractal_summary': self.fractal_identifier.get_fractal_summary()
+            }
             
-            # # Update context with fractals
-            # if self.context and all([self.symbol, self.exchange, self.period]):
-            #     # Type guard: we know these are not None after the check above
-            #     assert self.symbol is not None
-            #     assert self.exchange is not None
-            #     assert self.period is not None
+            # Update context with fractals
+            if self.context and all([self.symbol, self.exchange, self.period]):
+                # Type guard: we know these are not None after the check above
+                assert self.symbol is not None
+                assert self.exchange is not None
+                assert self.period is not None
                 
-            #     self.context.update_fractals(self.fractals, self.symbol, self.exchange, self.period)
+                self.context.update_fractals(self.fractals, self.symbol, self.exchange, self.period)
             
-            # if len(self.fractals) < 2:
-            #     self.logger.warning("Insufficient fractals for pen analysis")
-            #     return self._build_results(results, "Insufficient fractals")
+            if len(self.fractals) < 2:
+                self.logger.warning("Insufficient fractals for pen analysis")
+                return self._build_results(results, "Insufficient fractals")
 
-            # # Step 3: Process raw kbars from fractal to fractal to identify chanpen
-            # self.logger.info("Step 3: Creating pens from fractals with raw kbar validation")
-            # self.pen_processor.set_raw_kbars(kbars)
-            # self.pens = self.pen_processor.process_fractals(self.fractals)
+            # Step 3: Process raw kbars from fractal to fractal to identify chanpen
+            self.logger.info("Step 3: Creating pens from fractals with raw kbar validation")
+            self.pen_processor.set_raw_kbars(kbars)
+            self.pens = self.pen_processor.process_fractals(self.fractals)
             # results['step3_pens'] = {
             #     'total_pens': len(self.pens),
             #     'upward_pens': len(self.pen_processor.get_upward_pens()),

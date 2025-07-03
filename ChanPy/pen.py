@@ -43,9 +43,12 @@ class ChanPen:
     confirmed: bool = False
     break_type: PenBreakType = PenBreakType.NONE
     break_price: Optional[float] = None
+    merged_kbars: Optional[List[MergedKbar]] = None  # Merged kbars in the pen
     
     def __post_init__(self):
         """Calculate pen properties after initialization"""
+        if self.merged_kbars is None:
+            self.merged_kbars = []
         self._calculate_properties()
     
     def _calculate_properties(self):
@@ -83,6 +86,21 @@ class ChanPen:
     def kbar_count(self) -> int:
         """Get number of raw kbars in this pen"""
         return len(self.raw_kbars)
+    
+    @property
+    def merged_kbar_count(self) -> int:
+        """Get number of merged kbars in this pen"""
+        return len(self.merged_kbars) if self.merged_kbars else 0
+    
+    def __repr__(self) -> str:
+        """String representation of the pen"""
+        direction_str = "UP  " if self.direction == PenDirection.UP else "DOWN"
+        return (f"ChanPen(direction={direction_str}, "
+                f"start={self.start_time}, "
+                f"end={self.end_time}, "
+                f"raw_kbars={self.kbar_count:2d}, "
+                f"merged_kbars={self.merged_kbar_count:2d}, "
+                f"length={self.length:8.4f})")
 
 
 class PenProcessor:
@@ -269,7 +287,8 @@ class PenProcessor:
             low=0.0,   # Will be calculated in __post_init__
             length=length,
             raw_kbars=pen_kbars,
-            confirmed=True
+            confirmed=True,
+            merged_kbars=[]  # Initialize as empty list - to be populated later
         )
         
         return pen
@@ -296,9 +315,7 @@ class PenProcessor:
             pen = self.create_pen(start_fractal, end_fractal)
             if pen:
                 pens.append(pen)
-                self.logger.debug(f"Created {pen.direction.name} pen from "
-                                f"{start_fractal.fractal_type.name} to "
-                                f"{end_fractal.fractal_type.name}, length: {pen.length:.4f}")
+                self.logger.debug(f"Pen: {pen}")
         
         self.pens = pens
         self.logger.info(f"Created {len(pens)} valid pens from {len(fractals)} fractals")
