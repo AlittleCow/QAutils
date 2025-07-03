@@ -501,10 +501,10 @@ class KbarMerger:
         # which means the kbars can be merged
         can_merge_result = relationship not in non_mergeable_relationships
         
+        # Always log the relationship analysis
         self.logger.debug(f"Kbar relationship: {relationship} - Can merge: {can_merge_result}")
-        if can_merge_result:
-            self.logger.debug(f"Kbar1: {kbar1}")
-            self.logger.debug(f"Kbar2: {kbar2}")
+        self.logger.debug(f"Kbar1: {kbar1}")
+        self.logger.debug(f"Kbar2: {kbar2}")
 
         return relationship if can_merge_result else None
     
@@ -605,7 +605,7 @@ class KbarMerger:
                 relationship = self._get_merge_relationship(current_kbar, next_kbar)
                 if relationship is not None:
                     # Determine merge direction
-                    merge_direction = self._determine_merge_direction(current_kbar, next_kbar)
+                    merge_direction = self._determine_merge_direction(current_kbar, next_kbar, relationship)
                     
                     # Merge the two kbars (skip merge check since we already verified)
                     merged = self.merge_two_kbars(current_kbar, next_kbar, merge_direction, skip_merge_check=True)
@@ -621,7 +621,7 @@ class KbarMerger:
                         next_relationship = self._get_merge_relationship(temp_kbar, kbars[j])
                         if next_relationship is not None:
                             # Determine merge direction for subsequent merge
-                            subsequent_merge_direction = self._determine_merge_direction(temp_kbar, kbars[j])
+                            subsequent_merge_direction = self._determine_merge_direction(temp_kbar, kbars[j], next_relationship)
                             
                             # Merge with next kbar (skip merge check since we already verified)
                             merged = self._merge_merged_with_kbar(merged, kbars[j], subsequent_merge_direction, skip_merge_check=True)
@@ -751,19 +751,21 @@ class KbarMerger:
         self.merged_kbars.clear()
         self.logger.debug("Cleared all merged kbars")
     
-    def _determine_merge_direction(self, kbar1: 'Kbar', kbar2: 'Kbar') -> Direction:
+    def _determine_merge_direction(self, kbar1: 'Kbar', kbar2: 'Kbar', relationship: Optional[KBarRelationship] = None) -> Direction:
         """
         Determine the merge direction based on the relationship between two kbars
         
         Args:
             kbar1: First kbar (earlier in time)
             kbar2: Second kbar (later in time)
+            relationship: Pre-computed relationship (optional, will compute if None)
             
         Returns:
             Direction: The merge direction to use
         """
-        # Get the relationship between the two kbars
-        relationship = self._get_merge_relationship(kbar1, kbar2)
+        # Get the relationship between the two kbars if not provided
+        if relationship is None:
+            relationship = self._get_merge_relationship(kbar1, kbar2)
         
         # Use the ChanMergeKbarDirection class to determine the direction
         return self.direction_determiner.determine_merge_direction(kbar1, kbar2, relationship) 
