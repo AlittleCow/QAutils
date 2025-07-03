@@ -48,7 +48,9 @@ class ChanProcessor:
                  context: Optional[ChanContext] = None,
                  symbol: Optional[str] = None,
                  exchange: Optional[str] = None,
-                 period: Optional[str] = None):
+                 period: Optional[str] = None,
+                 start_time: Optional[str] = None,
+                 end_time: Optional[str] = None):
         """
         Initialize Chan Processor
         
@@ -61,8 +63,14 @@ class ChanProcessor:
             symbol: Stock symbol for context tracking
             exchange: Exchange code for context tracking
             period: Time period for context tracking
+            start_time: Start time for data range (format: "YYYY-MM-DD HH:MM:SS")
+            end_time: End time for data range (format: "YYYY-MM-DD HH:MM:SS")
         """
         self.logger = logging.getLogger(f"{__name__}")
+        
+        # Store time range parameters
+        self.start_time = start_time
+        self.end_time = end_time
         
         # Initialize context management
         self.context = context if context is not None else ChanContext()
@@ -104,7 +112,7 @@ class ChanProcessor:
                 assert exchange is not None
                 assert period is not None
                 
-                self.context.initialize_from_database(symbol, exchange, period)
+                self.context.initialize_from_database(symbol, exchange, period, start_time=start_time, end_time=end_time)
                 self._load_from_context()
                 self.logger.info("Initialized Chan processor from database context")
             except Exception as e:
@@ -597,6 +605,35 @@ class ChanProcessor:
             )
         }
     
+    def get_time_range(self) -> Dict[str, Optional[str]]:
+        """
+        Get the configured time range parameters
+        
+        Returns:
+            Dictionary with start_time and end_time
+        """
+        return {
+            'start_time': self.start_time,
+            'end_time': self.end_time
+        }
+    
+    def set_time_range(self, start_time: Optional[str] = None, end_time: Optional[str] = None):
+        """
+        Set the time range parameters
+        
+        Args:
+            start_time: Start time for data range (format: "YYYY-MM-DD HH:MM:SS")
+            end_time: End time for data range (format: "YYYY-MM-DD HH:MM:SS")
+        """
+        self.start_time = start_time
+        self.end_time = end_time
+        
+        time_range_info = ""
+        if start_time or end_time:
+            time_range_info = f" with time range: {start_time or 'unlimited'} to {end_time or 'unlimited'}"
+        
+        self.logger.info(f"Updated Chan processor time range{time_range_info}")
+    
     def close(self):
         """
         Close the Chan processor and release resources
@@ -711,9 +748,9 @@ class ChanProcessor:
             self.context.set_current_context(symbol, exchange, period)
             self.logger.info(f"Updated Chan context to {symbol}.{exchange} ({period})")
             
-            # Try to initialize from database
+            # Try to initialize from database with time range
             try:
-                self.context.initialize_from_database(symbol, exchange, period)
+                self.context.initialize_from_database(symbol, exchange, period, start_time=self.start_time, end_time=self.end_time)
                 self._load_from_context()
                 self.logger.info("Loaded existing analysis from database context")
             except Exception as e:
@@ -724,4 +761,30 @@ class ChanProcessor:
         if not self.context:
             return {'error': 'No context available'}
         
-        return self.context.get_context_summary(self.symbol, self.exchange, self.period) 
+        return self.context.get_context_summary(self.symbol, self.exchange, self.period)
+    
+    def load_kbars_from_context(self, limit: Optional[int] = 100) -> List['Kbar']:
+        """
+        Load K-bar data from context using the configured time range.
+        
+        Args:
+            limit: Maximum number of records to load
+            
+        Returns:
+            List of Kbar objects
+        """
+        if not self.context or not all([self.symbol, self.exchange, self.period]):
+            self.logger.warning("Context or symbol/exchange/period not available")
+            return []
+        
+        # Type guard: we know these are not None after the check above
+        assert self.symbol is not None
+        assert self.exchange is not None
+        assert self.period is not None
+        
+        return self.context.load_kbars_from_database(
+            self.symbol, self.exchange, self.period,
+            limit=limit,
+            start_time=self.start_time,
+            end_time=self.end_time
+        ) 

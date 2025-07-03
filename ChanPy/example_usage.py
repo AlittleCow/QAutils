@@ -152,10 +152,13 @@ DEFAULT_SYMBOL = "002120"
 DEFAULT_EXCHANGE = "SZ"
 DEFAULT_PERIOD = "daily"
 DEFAULT_LIMIT = 20
+DEFAULT_START_TIME = "2018-07-30 00:00:00"
+DEFAULT_END_TIME = "2018-09-01 00:00:00"
 
 
 def configure_analysis_parameters(symbol: Optional[str] = None, exchange: Optional[str] = None, 
-                                period: Optional[str] = None, limit: Optional[int] = None):
+                                period: Optional[str] = None, limit: Optional[int] = None,
+                                start_time: Optional[str] = None, end_time: Optional[str] = None):
     """
     Configure the default analysis parameters
     
@@ -164,8 +167,10 @@ def configure_analysis_parameters(symbol: Optional[str] = None, exchange: Option
         exchange: Exchange code (e.g., "SZ", "SH")
         period: Time period (e.g., "daily", "1min", "5min")
         limit: Maximum number of kbars to load
+        start_time: Start time for data range (format: "YYYY-MM-DD HH:MM:SS")
+        end_time: End time for data range (format: "YYYY-MM-DD HH:MM:SS")
     """
-    global DEFAULT_SYMBOL, DEFAULT_EXCHANGE, DEFAULT_PERIOD, DEFAULT_LIMIT
+    global DEFAULT_SYMBOL, DEFAULT_EXCHANGE, DEFAULT_PERIOD, DEFAULT_LIMIT, DEFAULT_START_TIME, DEFAULT_END_TIME
     
     if symbol is not None:
         DEFAULT_SYMBOL = symbol
@@ -175,8 +180,16 @@ def configure_analysis_parameters(symbol: Optional[str] = None, exchange: Option
         DEFAULT_PERIOD = period
     if limit is not None:
         DEFAULT_LIMIT = limit
+    if start_time is not None:
+        DEFAULT_START_TIME = start_time
+    if end_time is not None:
+        DEFAULT_END_TIME = end_time
     
-    print(f"Analysis parameters configured: {DEFAULT_SYMBOL}.{DEFAULT_EXCHANGE} ({DEFAULT_PERIOD}), limit={DEFAULT_LIMIT}")
+    time_range = ""
+    if DEFAULT_START_TIME or DEFAULT_END_TIME:
+        time_range = f", time_range={DEFAULT_START_TIME or 'unlimited'} to {DEFAULT_END_TIME or 'unlimited'}"
+    
+    print(f"Analysis parameters configured: {DEFAULT_SYMBOL}.{DEFAULT_EXCHANGE} ({DEFAULT_PERIOD}), limit={DEFAULT_LIMIT}{time_range}")
 
 
 def get_current_configuration() -> dict:
@@ -185,11 +198,14 @@ def get_current_configuration() -> dict:
         'symbol': DEFAULT_SYMBOL,
         'exchange': DEFAULT_EXCHANGE,
         'period': DEFAULT_PERIOD,
-        'limit': DEFAULT_LIMIT
+        'limit': DEFAULT_LIMIT,
+        'start_time': DEFAULT_START_TIME,
+        'end_time': DEFAULT_END_TIME
     }
 
 def load_kbar_data_from_database(symbol: str = "000001", exchange: str = "SH", 
-                                period: str = "1min", limit: int = 50) -> List[Kbar]:
+                                period: str = "1min", limit: int = 50,
+                                start_time: Optional[str] = None, end_time: Optional[str] = None) -> List[Kbar]:
     """
     Load kbar data from database using DatabaseManager
     
@@ -198,6 +214,8 @@ def load_kbar_data_from_database(symbol: str = "000001", exchange: str = "SH",
         exchange: Exchange code
         period: Time period
         limit: Maximum number of kbars to load
+        start_time: Start time for data range (format: "YYYY-MM-DD HH:MM:SS")
+        end_time: End time for data range (format: "YYYY-MM-DD HH:MM:SS")
         
     Returns:
         List of Kbar objects loaded from database
@@ -221,12 +239,35 @@ def load_kbar_data_from_database(symbol: str = "000001", exchange: str = "SH",
             return create_sample_kbars(limit)
         
         # Get kbar data from database
-        print(f"Loading kbar data for {symbol}.{exchange} ({period}) from database...")
+        time_range_info = ""
+        if start_time or end_time:
+            time_range_info = f" (time range: {start_time or 'unlimited'} to {end_time or 'unlimited'})"
+        
+        print(f"Loading kbar data for {symbol}.{exchange} ({period}) from database{time_range_info}...")
+        
+        # Convert string datetime parameters to datetime objects if provided
+        start_datetime = None
+        end_datetime = None
+        
+        if start_time:
+            try:
+                start_datetime = datetime.strptime(start_time, "%Y-%m-%d %H:%M:%S")
+            except ValueError:
+                print(f"Warning: Invalid start_time format '{start_time}', expected 'YYYY-MM-DD HH:MM:SS'")
+        
+        if end_time:
+            try:
+                end_datetime = datetime.strptime(end_time, "%Y-%m-%d %H:%M:%S")
+            except ValueError:
+                print(f"Warning: Invalid end_time format '{end_time}', expected 'YYYY-MM-DD HH:MM:SS'")
+        
         df = db_manager.get_kbar_data(
             symbol=symbol,
             exchange=exchange,
             period=period,
-            limit=limit
+            limit=limit,
+            start_time=start_datetime,
+            end_time=end_datetime
         )
         
         if df.empty:
@@ -463,10 +504,12 @@ def demonstrate_step_by_step_processing():
     exchange = DEFAULT_EXCHANGE
     period = DEFAULT_PERIOD
     limit = DEFAULT_LIMIT
+    start_time = DEFAULT_START_TIME
+    end_time = DEFAULT_END_TIME
     
     # Load data from database or use synthetic data
     print("Loading kbar data...")
-    kbars = load_kbar_data_from_database(symbol=symbol, exchange=exchange, period=period, limit=limit)
+    kbars = load_kbar_data_from_database(symbol=symbol, exchange=exchange, period=period, limit=limit, start_time=start_time, end_time=end_time)
     print(f"Using {len(kbars)} kbars for analysis")
     
     # Initialize processors
@@ -477,7 +520,9 @@ def demonstrate_step_by_step_processing():
         min_line_pens=3,
         symbol=symbol,
         exchange=exchange, 
-        period=period
+        period=period,
+        start_time=start_time,
+        end_time=end_time
     )
     
     # Process kbars through the complete pipeline
@@ -571,9 +616,11 @@ def demonstrate_individual_components():
     exchange = DEFAULT_EXCHANGE
     period = DEFAULT_PERIOD
     limit = 20  # Smaller limit for component demo
+    start_time = DEFAULT_START_TIME
+    end_time = DEFAULT_END_TIME
     
     # Load data from database or use synthetic data
-    kbars = load_kbar_data_from_database(symbol=symbol, exchange=exchange, period=period, limit=limit)
+    kbars = load_kbar_data_from_database(symbol=symbol, exchange=exchange, period=period, limit=limit, start_time=start_time, end_time=end_time)
     
     # Step 1: Kbar Merging
     print("\n1. Kbar Merging:")
@@ -623,16 +670,20 @@ def demonstrate_market_analysis():
     exchange = DEFAULT_EXCHANGE
     period = DEFAULT_PERIOD
     limit = 25  # Smaller limit for market analysis demo
+    start_time = DEFAULT_START_TIME
+    end_time = DEFAULT_END_TIME
     
     # Create processor
     processor = ChanProcessor(
         symbol=symbol,
         exchange=exchange,
-        period=period
+        period=period,
+        start_time=start_time,
+        end_time=end_time
     )
     
     # Load data from database or use synthetic data
-    kbars = load_kbar_data_from_database(symbol=symbol, exchange=exchange, period=period, limit=limit)
+    kbars = load_kbar_data_from_database(symbol=symbol, exchange=exchange, period=period, limit=limit, start_time=start_time, end_time=end_time)
     results = processor.process_kbars(kbars)
     
     if results['status'] == 'Success':
@@ -696,7 +747,7 @@ def demonstrate_multiple_symbols():
         print(f"\n--- Analyzing {symbol}.{exchange} ({period}) ---")
         
         # Load data for this symbol
-        kbars = load_kbar_data_from_database(symbol=symbol, exchange=exchange, period=period, limit=20)
+        kbars = load_kbar_data_from_database(symbol=symbol, exchange=exchange, period=period, limit=20, start_time=DEFAULT_START_TIME, end_time=DEFAULT_END_TIME)
         
         if not kbars:
             print(f"No data available for {symbol}.{exchange}")
@@ -706,7 +757,9 @@ def demonstrate_multiple_symbols():
         processor = ChanProcessor(
             symbol=symbol,
             exchange=exchange,
-            period=period
+            period=period,
+            start_time=DEFAULT_START_TIME,
+            end_time=DEFAULT_END_TIME
         )
         results = processor.process_kbars(kbars)
         
@@ -717,6 +770,103 @@ def demonstrate_multiple_symbols():
             print(f"  Global line active: {summary['global_line_active']}")
         else:
             print(f"  Analysis failed: {results['status']}")
+
+
+def demonstrate_time_range_filtering():
+    """Demonstrate how to use time range filtering for kbar data"""
+    print("\n=== Time Range Filtering Demo ===")
+    
+    # Setup logging for time range demo
+    log_file_path = setup_logging("chan_time_range.log", logging.INFO)
+    print(f"Logging to file: {log_file_path}")
+    
+    # Example 1: Configure time range using global parameters
+    print("\n1. Using global configuration:")
+    configure_analysis_parameters(
+        symbol="000001",
+        exchange="SH",
+        period="1min",
+        limit=100,
+        start_time="2023-01-01 09:30:00",
+        end_time="2023-01-01 15:00:00"
+    )
+    
+    # Load data using global configuration
+    config = get_current_configuration()
+    print(f"Current configuration: {config}")
+    
+    kbars = load_kbar_data_from_database(
+        symbol=config['symbol'],
+        exchange=config['exchange'],
+        period=config['period'],
+        limit=config['limit'],
+        start_time=config['start_time'],
+        end_time=config['end_time']
+    )
+    print(f"Loaded {len(kbars)} kbars for the specified time range")
+    
+    # Example 2: Direct function call with time range
+    print("\n2. Direct function call with time range:")
+    kbars2 = load_kbar_data_from_database(
+        symbol="002120",
+        exchange="SZ",
+        period="5min",
+        limit=50,
+        start_time="2023-06-01 10:00:00",
+        end_time="2023-06-01 14:30:00"
+    )
+    print(f"Loaded {len(kbars2)} kbars for direct time range query")
+    
+    # Example 3: Open-ended time range (only start time)
+    print("\n3. Open-ended time range (only start time):")
+    kbars3 = load_kbar_data_from_database(
+        symbol="000001",
+        exchange="SH",
+        period="daily",
+        limit=30,
+        start_time="2023-01-01 00:00:00",
+        end_time=None
+    )
+    print(f"Loaded {len(kbars3)} kbars from start time onwards")
+    
+    # Example 4: No time range (use limit only)
+    print("\n4. No time range (use limit only):")
+    kbars4 = load_kbar_data_from_database(
+        symbol="000001",
+        exchange="SH",
+        period="1min",
+        limit=20,
+        start_time=None,
+        end_time=None
+    )
+    print(f"Loaded {len(kbars4)} kbars using limit only")
+    
+    # Example 5: Using time range with ChanProcessor
+    print("\n5. Using time range with ChanProcessor:")
+    processor = ChanProcessor(
+        symbol="000001",
+        exchange="SH",
+        period="1min",
+        start_time="2023-01-01 09:30:00",
+        end_time="2023-01-01 15:00:00"
+    )
+    
+    # Get time range from processor
+    time_range = processor.get_time_range()
+    print(f"Processor time range: {time_range}")
+    
+    # Process kbars with time range context
+    results = processor.process_kbars(kbars)
+    print(f"Processed {len(kbars)} kbars with ChanProcessor (time range: {time_range['start_time']} to {time_range['end_time']})")
+    
+    # Example 6: Update time range dynamically
+    print("\n6. Update time range dynamically:")
+    processor.set_time_range(
+        start_time="2023-06-01 10:00:00",
+        end_time="2023-06-01 16:00:00"
+    )
+    updated_range = processor.get_time_range()
+    print(f"Updated processor time range: {updated_range}")
 
 
 def main():
@@ -748,6 +898,7 @@ def main():
         demonstrate_step_by_step_processing()
         # demonstrate_individual_components()
         # demonstrate_market_analysis()
+        # demonstrate_time_range_filtering()
         
         # # Only run multiple symbols demo if database is available
         # if DATABASE_AVAILABLE:

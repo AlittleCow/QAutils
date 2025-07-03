@@ -186,7 +186,9 @@ class ChanContext:
         return self.states[context_key]
     
     def initialize_from_database(self, symbol: str, exchange: str, period: str,
-                                limit: Optional[int] = 100) -> bool:
+                                limit: Optional[int] = 100,
+                                start_time: Optional[str] = None,
+                                end_time: Optional[str] = None) -> bool:
         """
         Initialize Chan state from database.
         
@@ -195,6 +197,8 @@ class ChanContext:
             exchange: Exchange code
             period: Time period
             limit: Maximum number of records to load
+            start_time: Start time for data range (format: "YYYY-MM-DD HH:MM:SS")
+            end_time: End time for data range (format: "YYYY-MM-DD HH:MM:SS")
             
         Returns:
             True if initialization was successful
@@ -207,10 +211,17 @@ class ChanContext:
             # Get or create state
             state = self.get_state(symbol, exchange, period)
             
+            # Log time range information
+            time_range_info = ""
+            if start_time or end_time:
+                time_range_info = f" (time range: {start_time or 'unlimited'} to {end_time or 'unlimited'})"
+            
+            self.logger.info(f"Initializing Chan state from database for {symbol}.{exchange} ({period}){time_range_info}")
+            
             # Load Chan lines from database
             if hasattr(self.db_manager, 'get_chan_lines'):
                 lines_data = self.db_manager.get_chan_lines(
-                    symbol, exchange, period, limit=limit
+                    symbol, exchange, period, start_time=start_time, end_time=end_time, limit=limit
                 )
                 
                 if lines_data:
@@ -235,14 +246,33 @@ class ChanContext:
             # Load K-bar data if available
             if hasattr(self.db_manager, 'get_kbar_data'):
                 try:
+                    # Convert string datetime parameters to datetime objects if provided
+                    start_datetime = None
+                    end_datetime = None
+                    
+                    if start_time:
+                        try:
+                            start_datetime = datetime.strptime(start_time, "%Y-%m-%d %H:%M:%S")
+                        except ValueError:
+                            self.logger.warning(f"Invalid start_time format '{start_time}', expected 'YYYY-MM-DD HH:MM:SS'")
+                    
+                    if end_time:
+                        try:
+                            end_datetime = datetime.strptime(end_time, "%Y-%m-%d %H:%M:%S")
+                        except ValueError:
+                            self.logger.warning(f"Invalid end_time format '{end_time}', expected 'YYYY-MM-DD HH:MM:SS'")
+                    
                     kbar_df = self.db_manager.get_kbar_data(
-                        symbol, exchange, period, limit=limit
+                        symbol, exchange, period, 
+                        limit=limit,
+                        start_time=start_datetime,
+                        end_time=end_datetime
                     )
                     if not kbar_df.empty:
                         # Convert DataFrame to Kbar objects
                         state.current_kbars = convert_df_to_kbars(kbar_df)
                         state.latest_kbar = state.current_kbars[-1] if state.current_kbars else None
-                        self.logger.info(f"Loaded {len(kbar_df)} K-bars from database")
+                        self.logger.info(f"Loaded {len(kbar_df)} K-bars from database{time_range_info}")
                 except Exception as e:
                     self.logger.debug(f"K-bar data not available: {e}")
             
@@ -598,3 +628,71 @@ class ChanContext:
             self.db_manager.close()
         self.clear_all_contexts()
         self.logger.info("Chan context closed")
+
+    def load_kbars_from_database(self, symbol: str, exchange: str, period: str,
+                                limit: Optional[int] = 100,
+                                start_time: Optional[str] = None,
+                                end_time: Optional[str] = None) -> List['Kbar']:
+        """
+        Load K-bar data from database with time range filtering.
+        
+        Args:
+            symbol: Stock symbol
+            exchange: Exchange code
+            period: Time period
+            limit: Maximum number of records to load
+            start_time: Start time for data range (format: "YYYY-MM-DD HH:MM:SS")
+            end_time: End time for data range (format: "YYYY-MM-DD HH:MM:SS")
+            
+        Returns:
+            List of Kbar objects
+        """
+        if not self.db_manager or not hasattr(self.db_manager, 'get_kbar_data'):
+            self.logger.warning("Database manager not available for loading K-bars")
+            return []
+        
+        try:
+            # Log time range information
+            time_range_info = ""
+            if start_time or end_time:
+                time_range_info = f" (time range: {start_time or 'unlimited'} to {end_time or 'unlimited'})"
+            
+            self.logger.info(f"Loading K-bar data from database for {symbol}.{exchange} ({period}){time_range_info}")
+            
+            # Convert string datetime parameters to datetime objects if provided
+            start_datetime = None
+            end_datetime = None
+            
+            if start_time:
+                try:
+                    start_datetime = datetime.strptime(start_time, "%Y-%m-%d %H:%M:%S")
+                except ValueError:
+                    self.logger.warning(f"Invalid start_time format '{start_time}', expected 'YYYY-MM-DD HH:MM:SS'")
+            
+            if end_time:
+                try:
+                    end_datetime = datetime.strptime(end_time, "%Y-%m-%d %H:%M:%S")
+                except ValueError:
+                    self.logger.warning(f"Invalid end_time format '{end_time}', expected 'YYYY-MM-DD HH:MM:SS'")
+            
+            # Load K-bar data from database
+            kbar_df = self.db_manager.get_kbar_data(
+                symbol, exchange, period,
+                limit=limit,
+                start_time=start_datetime,
+                end_time=end_datetime
+            )
+            
+            if kbar_df.empty:
+                self.logger.warning(f"No K-bar data found for {symbol}.{exchange} ({period}){time_range_info}")
+                return []
+            
+            # Convert DataFrame to Kbar objects
+            kbars = convert_df_to_kbars(kbar_df)
+            self.logger.info(f"Loaded {len(kbars)} K-bars from database{time_range_info}")
+            
+            return kbars
+            
+        except Exception as e:
+            self.logger.error(f"Failed to load K-bar data from database: {str(e)}")
+            return []
