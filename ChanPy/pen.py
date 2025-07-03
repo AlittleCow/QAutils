@@ -689,23 +689,9 @@ class PenProcessor:
                 else:
                     self.logger.debug(f"Skipping pen creation - relationship analysis suggests not to merge: {relationship_result.merge_recommendation}")
             else:
-                self.logger.warning("Pen relationship handler not available, using fallback logic")
-                # Fallback to original logic if pen relationship handler is not available
-                new_pen = self.create_pen(pen1.start_fractal, pen3.end_fractal)
-                
-                if new_pen:
-                    # Add information about the source pens and their relationship
-                    new_pen.validation_details = new_pen.validation_details or {}
-                    new_pen.validation_details['source_pens'] = [
-                        f"Pen1({pen1.start_time}-{pen1.end_time})",
-                        f"Pen2({pen2.start_time}-{pen2.end_time})",
-                        f"Pen3({pen3.start_time}-{pen3.end_time})"
-                    ]
-                    new_pen.validation_details['three_pen_relationship'] = pen_relationship.value
-                    new_pen.validation_details['three_pen_relationship_description'] = pen_relationship.get_description()
-                    
-                    new_pens.append(new_pen)
-                    self.logger.debug(f"Created new pen from 3 consecutive pens (fallback): {new_pen}")
+                self.logger.error("Pen relationship handler not available, using fallback logic")
+                raise ValueError("Pen relationship handler not available")
+
             # # Create new pen from pen1's start to pen3's end
             # new_pen = self.create_pen(pen1.start_fractal, pen3.end_fractal)
             

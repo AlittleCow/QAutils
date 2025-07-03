@@ -203,9 +203,13 @@ class PenRelationshipHandler:
         Handle K1_CONTAINS_K2 relationship (pen1 completely contains pen3)
         
         Special considerations:
-        - Pen1 range completely encompasses pen3 range
-        - This suggests pen1 is a larger movement that contains pen3's smaller range
-        - May indicate pen consolidation or reversal pattern
+        - First check if there's already a first line existed
+        - If no first line exists, handle 8 combinations of pen validity
+        - For all valid pens: treat first pen as first line, move to p2-p3-p4
+        - For not all valid pens: check 7 cases from image
+        - Green circle = valid pen, red circle = invalid pen
+        - First 4 cases: treat first pen as valid line
+        - Rest 3 cases: bypass first pen like step 2
         
         Args:
             pen1: First pen (contains pen3)
@@ -221,33 +225,192 @@ class PenRelationshipHandler:
         # Get context-enhanced analysis
         enhanced_analysis = self._get_context_enhanced_analysis(pen1, pen2, pen3)
         
-        # TODO: Implement specific logic for K1_CONTAINS_K2
-        # Placeholder implementation
-        special_considerations = [
-            "Pen1 completely contains pen3 range",
-            "Potential consolidation or reversal pattern",
-            "Consider pen1 as dominant movement"
-        ]
+        # Step 1: Check if there's already a first line existed
+        first_line_exists = False
+        if self.context:
+            try:
+                # Check if there's a global line or any existing line
+                global_line = self.context.get_global_line()
+                latest_line = self.context.get_latest_line()
+                
+                if global_line or latest_line:
+                    first_line_exists = True
+                    self.logger.debug("First line already exists")
+                else:
+                    self.logger.debug("No first line exists, proceeding with pen validity analysis")
+            except Exception as e:
+                self.logger.warning(f"Error checking first line existence: {e}")
+                first_line_exists = False
         
-        # Add context-specific considerations
-        if enhanced_analysis.get('global_line_direction'):
-            special_considerations.append(f"Global line direction: {enhanced_analysis['global_line_direction']}")
-        
+        special_considerations = []
         analysis_details = {
             "pen1_range": pen1.length,
             "pen3_range": pen3.length,
-            "containment_ratio": pen3.length / pen1.length if pen1.length > 0 else 0
+            "containment_ratio": pen3.length / pen1.length if pen1.length > 0 else 0,
+            "first_line_exists": first_line_exists
         }
-        analysis_details.update(enhanced_analysis)
         
-        return PenRelationshipResult(
-            relationship=relationship,
-            can_merge=True,  # Placeholder
-            merge_recommendation="Consider merging with pen1 dominance",
-            special_considerations=special_considerations,
-            confidence_score=0.7,  # Placeholder
-            analysis_details=analysis_details
-        )
+        # If first line exists, use original logic
+        if first_line_exists:
+            special_considerations.extend([
+                "First line already exists",
+                "Pen1 completely contains pen3 range",
+                "Potential consolidation or reversal pattern",
+                "Consider pen1 as dominant movement"
+            ])
+            
+            # Add context-specific considerations
+            if enhanced_analysis.get('global_line_direction'):
+                special_considerations.append(f"Global line direction: {enhanced_analysis['global_line_direction']}")
+            
+            analysis_details.update(enhanced_analysis)
+            
+            return PenRelationshipResult(
+                relationship=relationship,
+                can_merge=True,
+                merge_recommendation="First line exists - consider merging with pen1 dominance",
+                special_considerations=special_considerations,
+                confidence_score=0.7,
+                analysis_details=analysis_details
+            )
+        
+        # Step 2: Handle case when first line doesn't exist
+        # Check validity of each pen (8 combinations: 2^3 = 8)
+        pen1_valid = pen1.is_valid
+        pen2_valid = pen2.is_valid
+        pen3_valid = pen3.is_valid
+        
+        # Create validity pattern string for logging
+        validity_pattern = f"pen1:{'V' if pen1_valid else 'I'}, pen2:{'V' if pen2_valid else 'I'}, pen3:{'V' if pen3_valid else 'I'}"
+        self.logger.debug(f"Pen validity pattern: {validity_pattern}")
+        
+        analysis_details.update({
+            "pen1_valid": pen1_valid,
+            "pen2_valid": pen2_valid,
+            "pen3_valid": pen3_valid,
+            "validity_pattern": validity_pattern
+        })
+        
+        # Step 3: Handle all pens valid case
+        if pen1_valid and pen2_valid and pen3_valid:
+            special_considerations.extend([
+                "All pens are valid",
+                "Treat first pen as first line",
+                "Move to 3 consecutive pens starting from pen-2 (p2-p3-p4)"
+            ])
+            
+            analysis_details["case_type"] = "all_valid"
+            analysis_details["next_pens"] = "p2-p3-p4"
+            
+            return PenRelationshipResult(
+                relationship=relationship,
+                can_merge=False,  # Don't merge, treat pen1 as first line
+                merge_recommendation="Treat pen1 as first line, process p2-p3-p4 next",
+                special_considerations=special_considerations,
+                confidence_score=0.9,
+                analysis_details=analysis_details
+            )
+        
+        # Step 4: Handle not all pens valid case - 7 cases from image
+        # According to the image description:
+        # - Green circle = valid pen, red circle = invalid pen
+        # - First 4 cases: treat first pen as valid line
+        # - Rest 3 cases: bypass first pen
+        
+        # Define the 7 cases based on validity patterns
+        # Case 1: pen1=V, pen2=V, pen3=I (VVI)
+        # Case 2: pen1=V, pen2=I, pen3=V (VIV)
+        # Case 3: pen1=V, pen2=I, pen3=I (VII)
+        # Case 4: pen1=I, pen2=V, pen3=V (IVV)
+        # Case 5: pen1=I, pen2=V, pen3=I (IVI)
+        # Case 6: pen1=I, pen2=I, pen3=V (IIV)
+        # Case 7: pen1=I, pen2=I, pen3=I (III)
+        
+        # First 4 cases: treat first pen as valid line
+        if ((pen1_valid and pen2_valid and not pen3_valid) or      # Case 1: VVI
+            (pen1_valid and not pen2_valid and pen3_valid) or      # Case 2: VIV
+            (pen1_valid and not pen2_valid and not pen3_valid) or  # Case 3: VII
+            (not pen1_valid and pen2_valid and pen3_valid)):       # Case 4: IVV
+            
+            case_names = {
+                (True, True, False): "Case 1: VVI",
+                (True, False, True): "Case 2: VIV", 
+                (True, False, False): "Case 3: VII",
+                (False, True, True): "Case 4: IVV"
+            }
+            
+            case_name = case_names.get((pen1_valid, pen2_valid, pen3_valid), "Unknown Case")
+            
+            special_considerations.extend([
+                f"Pen validity: {case_name}",
+                "First 4 cases: treat first pen as valid line",
+                "Use first pen as basis for line formation"
+            ])
+            
+            analysis_details["case_type"] = "treat_first_pen_as_line"
+            analysis_details["case_name"] = case_name
+            analysis_details["action"] = "treat_pen1_as_first_line"
+            
+            return PenRelationshipResult(
+                relationship=relationship,
+                can_merge=False,  # Don't merge, treat pen1 as first line
+                merge_recommendation=f"{case_name} - treat first pen as valid line",
+                special_considerations=special_considerations,
+                confidence_score=0.8,
+                analysis_details=analysis_details
+            )
+        
+        # Rest 3 cases: bypass first pen
+        elif ((not pen1_valid and pen2_valid and not pen3_valid) or  # Case 5: IVI
+              (not pen1_valid and not pen2_valid and pen3_valid) or  # Case 6: IIV
+              (not pen1_valid and not pen2_valid and not pen3_valid)): # Case 7: III
+            
+            case_names = {
+                (False, True, False): "Case 5: IVI",
+                (False, False, True): "Case 6: IIV",
+                (False, False, False): "Case 7: III"
+            }
+            
+            case_name = case_names.get((pen1_valid, pen2_valid, pen3_valid), "Unknown Case")
+            
+            special_considerations.extend([
+                f"Pen validity: {case_name}",
+                "Rest 3 cases: bypass first pen",
+                "Move to 3 consecutive pens starting from pen-2 (p2-p3-p4)"
+            ])
+            
+            analysis_details["case_type"] = "bypass_first_pen"
+            analysis_details["case_name"] = case_name
+            analysis_details["action"] = "bypass_pen1_use_p2_p3_p4"
+            analysis_details["next_pens"] = "p2-p3-p4"
+            
+            return PenRelationshipResult(
+                relationship=relationship,
+                can_merge=True,  # Merge by bypassing first pen
+                merge_recommendation=f"{case_name} - bypass first pen, use p2-p3-p4",
+                special_considerations=special_considerations,
+                confidence_score=0.8,
+                analysis_details=analysis_details
+            )
+        
+        # Fallback case (shouldn't happen with 3 boolean values)
+        else:
+            special_considerations.extend([
+                "Unexpected pen validity pattern",
+                "Using fallback logic"
+            ])
+            
+            analysis_details["case_type"] = "fallback"
+            analysis_details["error"] = "Unexpected validity pattern"
+            
+            return PenRelationshipResult(
+                relationship=relationship,
+                can_merge=False,
+                merge_recommendation="Unexpected pattern - manual review required",
+                special_considerations=special_considerations,
+                confidence_score=0.3,
+                analysis_details=analysis_details
+            )
     
     def _handle_k2_contains_k1(self, pen1: 'ChanPen', pen2: 'ChanPen', 
                               pen3: 'ChanPen', relationship: KBarRelationship) -> PenRelationshipResult:
@@ -365,10 +528,10 @@ class PenRelationshipHandler:
         
         return PenRelationshipResult(
             relationship=relationship,
-            can_merge=False,  # Complete separation cannot merge
-            merge_recommendation="Cannot merge - complete separation",
+            can_merge=True,  # merge with pen1
+            merge_recommendation="Merge with pen1 to Down Trend",
             special_considerations=special_considerations,
-            confidence_score=0.8,  # High confidence for clear separation
+            confidence_score=1,  # High confidence for clear separation
             analysis_details={
                 "gap_size": pen1.low - pen3.high,
                 "pen1_range": pen1.length,
@@ -407,10 +570,10 @@ class PenRelationshipHandler:
         
         return PenRelationshipResult(
             relationship=relationship,
-            can_merge=False,  # Complete separation cannot merge
-            merge_recommendation="Cannot merge - complete separation",
+            can_merge=True,
+            merge_recommendation="Merge with pen1 to Up Trend",
             special_considerations=special_considerations,
-            confidence_score=0.8,  # High confidence for clear separation
+            confidence_score=1,  # High confidence for clear separation
             analysis_details={
                 "gap_size": pen3.low - pen1.high,
                 "pen1_range": pen1.length,
@@ -449,10 +612,10 @@ class PenRelationshipHandler:
         
         return PenRelationshipResult(
             relationship=relationship,
-            can_merge=False,  # Overlaps typically don't merge
-            merge_recommendation="Monitor for trend continuation",
+            can_merge=True,
+            merge_recommendation="Merge with pen1 to Up Trend",
             special_considerations=special_considerations,
-            confidence_score=0.6,  # Medium confidence for overlap
+            confidence_score=1,  # Strong confidence for overlap
             analysis_details={
                 "overlap_size": pen1.high - pen3.low,
                 "upward_bias": pen3.high - pen1.high,
@@ -492,10 +655,10 @@ class PenRelationshipHandler:
         
         return PenRelationshipResult(
             relationship=relationship,
-            can_merge=False,  # Overlaps typically don't merge
-            merge_recommendation="Monitor for trend continuation",
+            can_merge=True,
+            merge_recommendation="Merge with pen1 to Down Trend",
             special_considerations=special_considerations,
-            confidence_score=0.6,  # Medium confidence for overlap
+            confidence_score=1,  # Strong confidence for overlap
             analysis_details={
                 "overlap_size": pen3.high - pen1.low,
                 "downward_bias": pen1.high - pen3.high,
