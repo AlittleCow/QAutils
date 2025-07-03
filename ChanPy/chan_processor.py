@@ -116,7 +116,7 @@ class ChanProcessor:
                 assert symbol is not None
                 assert exchange is not None
                 assert period is not None
-                self.logger.info("Initializing Chan processor from database context")
+                self.logger.info("Initialized Chan processor from database context successfully")
                 self.context.initialize_from_database(symbol, exchange, period, 
                                                      limit=kbar_limit, 
                                                      start_time=start_time, 
@@ -780,10 +780,10 @@ class ChanProcessor:
     
     def load_kbars_from_context(self, limit: Optional[int] = 100) -> List['Kbar']:
         """
-        Load K-bar data from context using the configured time range.
+        Load K-bar data from context (already loaded data) or database if not available.
         
         Args:
-            limit: Maximum number of records to load
+            limit: Maximum number of records to load (only used if loading from database)
             
         Returns:
             List of Kbar objects
@@ -797,6 +797,15 @@ class ChanProcessor:
         assert self.exchange is not None
         assert self.period is not None
         
+        # First, try to get data from context (already loaded)
+        state = self.context.get_state(self.symbol, self.exchange, self.period)
+        
+        if state.current_kbars:
+            self.logger.debug(f"Using {len(state.current_kbars)} K-bars from context (no database query)")
+            return state.current_kbars
+        
+        # If no data in context, load from database as fallback
+        self.logger.info("No K-bars in context, loading from database as fallback")
         return self.context.load_kbars_from_database(
             self.symbol, self.exchange, self.period,
             limit=limit,
@@ -828,8 +837,5 @@ class ChanProcessor:
         if not kbars:
             self.logger.warning("No K-bar data available for processing")
             return {'status': 'No data available', 'summary': {}}
-        
-        self.logger.info(f"Loaded {len(kbars)} K-bars from database for processing")
-        
         # Process the loaded K-bars
         return self.process_kbars(kbars) 
