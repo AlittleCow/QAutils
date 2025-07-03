@@ -15,14 +15,14 @@ __author__ = "ChanPy Team"
 # Import main classes for easy access
 from .chan import Kbar, Pen, Direction, PenType
 from .chan_processor import ChanProcessor
-from .mergekbar import KbarMerger, MergedKbar
+from .mergekbar import KbarMerger, MergedKbar, ChanMergeKbarDirection
 from .fractal import FractalIdentifier, Fractal, FractalType
 from .pen import PenProcessor, ChanPen, PenDirection
 from .line import LineProcessor, ChanLine, LineDirection
 
 __all__ = [
     'Kbar', 'Pen', 'Direction', 'PenType',
-    'MergedKbar', 'Fractal', 'FractalType', 'ChanPen', 'PenDirection', 'ChanLine', 'LineDirection',
+    'MergedKbar', 'ChanMergeKbarDirection', 'Fractal', 'FractalType', 'ChanPen', 'PenDirection', 'ChanLine', 'LineDirection',
     'ChanProcessor', 'KbarMerger', 'FractalIdentifier', 
     'PenProcessor', 'LineProcessor'
 ] 

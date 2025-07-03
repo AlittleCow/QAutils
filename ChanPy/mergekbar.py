@@ -16,6 +16,232 @@ if TYPE_CHECKING:
     from .context import ChanContext
 
 
+class ChanMergeKbarDirection:
+    """
+    Chan Merge Kbar Direction Determiner
+    
+    This class determines the merge direction for kbars using a fallback hierarchy:
+    1. Line direction (if global line is available)
+    2. Pen direction (if pens are available, use latest two pens)
+    3. Fractal direction (if fractals are available, use latest 5, 3, or 1 fractal)
+    4. Fallback to UNKNOWN if no Chan structures are available
+    """
+    
+    def __init__(self, context: Optional['ChanContext'] = None):
+        """
+        Initialize the direction determiner
+        
+        Args:
+            context: ChanContext instance for accessing Chan structures
+        """
+        self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
+        self.context = context
+    
+    def determine_merge_direction(self, kbar1: 'Kbar', kbar2: 'Kbar') -> Direction:
+        """
+        Determine the merge direction using the fallback hierarchy
+        
+        Args:
+            kbar1: First kbar (earlier in time)
+            kbar2: Second kbar (later in time)
+            
+        Returns:
+            Direction for merging
+        """
+        # Step 1: Try to get direction from global line
+        line_direction = self._get_line_direction()
+        if line_direction != Direction.UNKNOWN:
+            self.logger.debug(f"Using line direction: {line_direction}")
+            return line_direction
+        
+        # Step 2: Try to get direction from pens
+        pen_direction = self._get_pen_direction()
+        if pen_direction != Direction.UNKNOWN:
+            self.logger.debug(f"Using pen direction: {pen_direction}")
+            return pen_direction
+        
+        # Step 3: Try to get direction from fractals
+        fractal_direction = self._get_fractal_direction()
+        if fractal_direction != Direction.UNKNOWN:
+            self.logger.debug(f"Using fractal direction: {fractal_direction}")
+            return fractal_direction
+        
+        # Step 4: Fallback to simple heuristic
+        self.logger.debug("No Chan structures available, using fallback heuristic")
+        return self._get_fallback_direction(kbar1, kbar2)
+    
+    def _get_line_direction(self) -> Direction:
+        """Get direction from global line"""
+        if not self.context:
+            return Direction.UNKNOWN
+        
+        try:
+            global_line = self.context.get_global_line()
+            if global_line is not None:
+                # Map LineDirection to Direction
+                from .line import LineDirection
+                if global_line.direction == LineDirection.UP:
+                    return Direction.UP
+                elif global_line.direction == LineDirection.DOWN:
+                    return Direction.DOWN
+        except Exception as e:
+            self.logger.debug(f"Failed to get global line: {e}")
+        
+        return Direction.UNKNOWN
+    
+    def _get_pen_direction(self) -> Direction:
+        """Get direction from the latest two pens"""
+        if not self.context:
+            return Direction.UNKNOWN
+        
+        try:
+            # Get current state to access the pen list
+            state = self.context.get_current_state()
+            if not state or len(state.current_pens) < 2:
+                return Direction.UNKNOWN
+            
+            # Get the latest two pens
+            latest_pens = state.current_pens[-2:]
+            
+            # Determine trend direction from the two pens
+            pen1, pen2 = latest_pens
+            
+            # Map PenDirection to Direction
+            from .pen import PenDirection
+            
+            # If both pens are in the same direction, use that direction
+            if pen1.direction == pen2.direction:
+                if pen1.direction == PenDirection.UP:
+                    return Direction.UP
+                elif pen1.direction == PenDirection.DOWN:
+                    return Direction.DOWN
+            
+            # If pens alternate, use the direction of the most recent pen
+            if pen2.direction == PenDirection.UP:
+                return Direction.UP
+            elif pen2.direction == PenDirection.DOWN:
+                return Direction.DOWN
+            
+        except Exception as e:
+            self.logger.debug(f"Failed to get pen direction: {e}")
+        
+        return Direction.UNKNOWN
+    
+    def _get_fractal_direction(self) -> Direction:
+        """Get direction from fractals using the fallback hierarchy"""
+        if not self.context:
+            return Direction.UNKNOWN
+        
+        try:
+            # Get current state to access the fractal list
+            state = self.context.get_current_state()
+            if not state or not state.current_fractals:
+                return Direction.UNKNOWN
+            
+            fractals = state.current_fractals
+            
+            # Try latest 5 fractals
+            if len(fractals) >= 5:
+                direction = self._analyze_fractal_trend(fractals[-5:])
+                if direction != Direction.UNKNOWN:
+                    return direction
+            
+            # Try latest 3 fractals  
+            if len(fractals) >= 3:
+                direction = self._analyze_fractal_trend(fractals[-3:])
+                if direction != Direction.UNKNOWN:
+                    return direction
+            
+            # Try last fractal
+            if len(fractals) >= 1:
+                return self._get_single_fractal_direction(fractals[-1])
+            
+        except Exception as e:
+            self.logger.debug(f"Failed to get fractal direction: {e}")
+        
+        return Direction.UNKNOWN
+    
+    def _analyze_fractal_trend(self, fractals: List) -> Direction:
+        """
+        Analyze the trend direction from a sequence of fractals
+        
+        Args:
+            fractals: List of fractals to analyze
+            
+        Returns:
+            Direction based on fractal trend
+        """
+        if len(fractals) < 2:
+            return Direction.UNKNOWN
+        
+        # Import here to avoid circular import
+        from .fractal import FractalType
+        
+        # Calculate the overall trend by comparing first and last fractal prices
+        first_fractal = fractals[0]
+        last_fractal = fractals[-1]
+        
+        # If the trend is generally upward
+        if last_fractal.price > first_fractal.price:
+            return Direction.UP
+        # If the trend is generally downward
+        elif last_fractal.price < first_fractal.price:
+            return Direction.DOWN
+        else:
+            # If prices are equal, look at the fractal types
+            # If we end with a bottom fractal, trend might be turning up
+            if last_fractal.fractal_type == FractalType.BOTTOM:
+                return Direction.UP
+            # If we end with a top fractal, trend might be turning down
+            elif last_fractal.fractal_type == FractalType.TOP:
+                return Direction.DOWN
+        
+        return Direction.UNKNOWN
+    
+    def _get_single_fractal_direction(self, fractal) -> Direction:
+        """
+        Get direction from a single fractal
+        
+        Args:
+            fractal: Single fractal to analyze
+            
+        Returns:
+            Direction based on fractal type
+        """
+        # Import here to avoid circular import
+        from .fractal import FractalType
+        
+        # If it's a bottom fractal, expect upward movement
+        if fractal.fractal_type == FractalType.BOTTOM:
+            return Direction.UP
+        # If it's a top fractal, expect downward movement
+        elif fractal.fractal_type == FractalType.TOP:
+            return Direction.DOWN
+        
+        return Direction.UNKNOWN
+    
+    def _get_fallback_direction(self, kbar1: 'Kbar', kbar2: 'Kbar') -> Direction:
+        """
+        Fallback direction determination using simple heuristic
+        
+        Args:
+            kbar1: First kbar (earlier in time)
+            kbar2: Second kbar (later in time)
+            
+        Returns:
+            Direction based on price movement
+        """
+        # Simple heuristic: if both kbars are generally trending in the same direction,
+        # use that direction. Otherwise, use UNKNOWN for traditional merge behavior.
+        
+        if kbar2.close > kbar1.close:
+            return Direction.UP
+        elif kbar2.close < kbar1.close:
+            return Direction.DOWN
+        else:
+            return Direction.UNKNOWN
+
+
 @dataclass
 class MergedKbar:
     """Merged K-bar data structure"""
@@ -74,6 +300,8 @@ class KbarMerger:
         self.logger = logging.getLogger(f"{__name__}")
         self.merged_kbars: List[MergedKbar] = []
         self.context = context
+        # Initialize the direction determiner
+        self.direction_determiner = ChanMergeKbarDirection(context)
     
     def can_merge(self, kbar1: 'Kbar', kbar2: 'Kbar') -> bool:
         """
@@ -376,30 +604,5 @@ class KbarMerger:
         Returns:
             Direction: The merge direction to use
         """
-        # Check if current line exists in chan context
-        if self.context:
-            try:
-                global_line = self.context.get_global_line()
-                self.logger.debug(f"Global line: {global_line}")
-                if global_line is not None:
-                    # Map LineDirection to Direction
-                    from .line import LineDirection
-                    if global_line.direction == LineDirection.UP:
-                        return Direction.UP
-                    elif global_line.direction == LineDirection.DOWN:
-                        return Direction.DOWN
-                    else:
-                        # If line direction is unknown, fall back to current method
-                        pass
-            except Exception as e:
-                self.logger.debug(f"Failed to get global line from context: {e}")
-        
-        # Fallback to current method if no current line exists or context unavailable
-        # Simple heuristic: if both kbars are generally trending in the same direction,
-        # use that direction. Otherwise, use UNKNOWN for traditional merge behavior.
-        
-        kbar1_direction = Direction.UP if kbar2.close > kbar1.close else Direction.DOWN if kbar2.close < kbar1.close else Direction.UNKNOWN
-        
-        # You can add more sophisticated logic here based on your specific requirements
-        # For now, return UNKNOWN to maintain existing behavior
-        return Direction.UNKNOWN 
+        # Use the ChanMergeKbarDirection class to determine the direction
+        return self.direction_determiner.determine_merge_direction(kbar1, kbar2) 
