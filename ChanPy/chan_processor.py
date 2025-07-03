@@ -81,7 +81,7 @@ class ChanProcessor:
             self.logger.info(f"Set Chan context to {symbol}.{exchange} ({period})")
         
         # Initialize all processors
-        self.kbar_merger = KbarMerger()
+        self.kbar_merger = KbarMerger(context=self.context)
         self.fractal_identifier = FractalIdentifier(strict_mode=strict_fractal_mode)
         self.pen_processor = PenProcessor(
             min_pen_length=min_pen_length, 

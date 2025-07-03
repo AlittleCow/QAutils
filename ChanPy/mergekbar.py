@@ -13,6 +13,7 @@ from .chantypes import KBarRelationship, get_kbar_objects_relationship, Directio
 
 if TYPE_CHECKING:
     from .chan import Kbar
+    from .context import ChanContext
 
 
 @dataclass
@@ -69,9 +70,10 @@ class KbarMerger:
     Two kbars are merged if one is completely contained within the other.
     """
     
-    def __init__(self):
+    def __init__(self, context: Optional['ChanContext'] = None):
         self.logger = logging.getLogger(f"{__name__}")
         self.merged_kbars: List[MergedKbar] = []
+        self.context = context
     
     def can_merge(self, kbar1: 'Kbar', kbar2: 'Kbar') -> bool:
         """
@@ -374,6 +376,25 @@ class KbarMerger:
         Returns:
             Direction: The merge direction to use
         """
+        # Check if current line exists in chan context
+        if self.context:
+            try:
+                global_line = self.context.get_global_line()
+                self.logger.debug(f"Global line: {global_line}")
+                if global_line is not None:
+                    # Map LineDirection to Direction
+                    from .line import LineDirection
+                    if global_line.direction == LineDirection.UP:
+                        return Direction.UP
+                    elif global_line.direction == LineDirection.DOWN:
+                        return Direction.DOWN
+                    else:
+                        # If line direction is unknown, fall back to current method
+                        pass
+            except Exception as e:
+                self.logger.debug(f"Failed to get global line from context: {e}")
+        
+        # Fallback to current method if no current line exists or context unavailable
         # Simple heuristic: if both kbars are generally trending in the same direction,
         # use that direction. Otherwise, use UNKNOWN for traditional merge behavior.
         

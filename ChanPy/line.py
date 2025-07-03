@@ -99,6 +99,34 @@ class ChanLine:
     def pen_count(self) -> int:
         """Get number of pens in this line"""
         return len(self.pens)
+    
+    def __repr__(self) -> str:
+        """String representation for debugging and display"""
+        # Format direction with arrow
+        direction_arrow = "↗" if self.direction == LineDirection.UP else "↘"
+        
+        # Format timestamps to be more readable
+        start_time_str = self.start_time.replace('+00:00', '').replace('T', ' ')
+        end_time_str = self.end_time.replace('+00:00', '').replace('T', ' ')
+        if len(start_time_str) > 19:
+            start_time_str = start_time_str[:19]
+        if len(end_time_str) > 19:
+            end_time_str = end_time_str[:19]
+        
+        # Get start and end peak values
+        start_peak = self.start_price
+        end_peak = self.end_price
+        
+        # Calculate price change
+        price_change = end_peak - start_peak
+        price_change_pct = (price_change / start_peak * 100) if start_peak != 0 else 0
+        
+        # Format the representation
+        return (f"ChanLine({self.direction.name} {direction_arrow} "
+                f"Start: {start_time_str} @{start_peak:.2f} → "
+                f"End: {end_time_str} @{end_peak:.2f} "
+                f"[Δ{price_change:+.2f} ({price_change_pct:+.1f}%)] "
+                f"Pens:{self.pen_count} Status:{self.status.name})")
 
 
 class LineProcessor:

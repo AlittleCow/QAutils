@@ -8,6 +8,30 @@ that follows the specified four-step process:
 2. Check consecutive merged kbars for fractals
 3. Process raw kbars from fractal to fractal to identify chanpen
 4. Process chanpen breaking and chanline formation
+
+=== LOGGING FEATURES ===
+
+This script includes comprehensive logging to both console and file:
+
+1. Automatic file logging: Logs are automatically written to files in the 'logs' directory
+2. Multiple log files: Different functions create separate log files for better organization
+3. Configurable logging: Use configure_logging_parameters() to customize:
+   - Log level (DEBUG, INFO, WARNING, ERROR)
+   - Log directory location
+   - Log file prefix
+   - Include timestamp in filenames
+
+Usage examples:
+- Basic: Just run the script - logs will be created automatically
+- Custom: Call configure_logging_parameters() before running demonstrations
+- Advanced: Modify setup_logging() calls in individual functions for fine-grained control
+
+Log files created:
+- chan_main.log: Main application log
+- chan_step_by_step.log: Detailed step-by-step processing logs
+- chan_components.log: Individual component usage logs
+- chan_market_analysis.log: Market analysis logs
+- chan_multiple_symbols.log: Multiple symbol analysis logs
 """
 
 import logging
@@ -287,12 +311,116 @@ def create_sample_kbars(count: int = 50) -> List[Kbar]:
     return kbars
 
 
+def configure_logging_parameters(log_level: str = "INFO", log_dir: str = "logs", 
+                                file_prefix: str = "chan", include_timestamp: bool = True):
+    """
+    Configure logging parameters globally
+    
+    Args:
+        log_level: Logging level ("DEBUG", "INFO", "WARNING", "ERROR")
+        log_dir: Directory for log files (relative to current directory)
+        file_prefix: Prefix for log file names
+        include_timestamp: Whether to include timestamp in log filenames
+    """
+    global LOGGING_CONFIG
+    
+    # Convert string level to logging constant
+    level_mapping = {
+        "DEBUG": logging.DEBUG,
+        "INFO": logging.INFO,
+        "WARNING": logging.WARNING,
+        "ERROR": logging.ERROR
+    }
+    
+    numeric_level = level_mapping.get(log_level.upper(), logging.INFO)
+    
+    # Create timestamp suffix if requested
+    timestamp_suffix = ""
+    if include_timestamp:
+        timestamp_suffix = f"_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    
+    LOGGING_CONFIG = {
+        'level': numeric_level,
+        'log_dir': log_dir,
+        'file_prefix': file_prefix,
+        'timestamp_suffix': timestamp_suffix
+    }
+    
+    print(f"Logging configured: Level={log_level.upper()}, Dir={log_dir}, "
+          f"Prefix={file_prefix}, Timestamp={include_timestamp}")
+
+
+def setup_logging(log_file: str = "chan_analysis.log", log_level: int = logging.DEBUG):
+    """
+    Setup logging to both console and file
+    
+    Args:
+        log_file: Path to the log file
+        log_level: Logging level (DEBUG, INFO, WARNING, ERROR)
+    """
+    # Use global config if available
+    if 'LOGGING_CONFIG' in globals():
+        config = LOGGING_CONFIG
+        log_level = config['level']
+        log_dir = os.path.join(current_dir, config['log_dir'])
+        
+        # Create filename with prefix and timestamp
+        base_name = log_file.replace('.log', '')
+        log_file = f"{config['file_prefix']}_{base_name}{config['timestamp_suffix']}.log"
+    else:
+        # Default log directory
+        log_dir = os.path.join(current_dir, 'logs')
+    
+    # Create logs directory if it doesn't exist
+    os.makedirs(log_dir, exist_ok=True)
+    
+    # Full path to log file
+    log_file_path = os.path.join(log_dir, log_file)
+    
+    # Clear existing handlers
+    logging.getLogger().handlers.clear()
+    
+    # Create formatters - simplified file format to match console format
+    # Detailed formatter (commented out - uncomment to restore detailed logging):
+    # detailed_formatter = logging.Formatter(
+    #     '%(asctime)s - %(name)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s'
+    # )
+    
+    simple_formatter = logging.Formatter(
+        '%(levelname)s - %(message)s'
+    )
+    
+    # Create file handler with same simple format as console
+    # To restore detailed file logging, uncomment the next line and comment the one after:
+    # file_handler.setFormatter(detailed_formatter)
+    file_handler = logging.FileHandler(log_file_path, mode='a', encoding='utf-8')
+    file_handler.setLevel(log_level)
+    file_handler.setFormatter(simple_formatter)
+    
+    # Create console handler
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setLevel(log_level)
+    console_handler.setFormatter(simple_formatter)
+    
+    # Setup root logger
+    logger = logging.getLogger()
+    logger.setLevel(log_level)
+    logger.addHandler(file_handler)
+    logger.addHandler(console_handler)
+    
+    # Log the setup
+    logger.info(f"Logging setup complete - File: {log_file_path}, Level: {logging.getLevelName(log_level)}")
+    
+    return log_file_path
+
+
 def demonstrate_step_by_step_processing():
     """Demonstrate step-by-step Chan algorithm processing"""
     print("\n=== Step-by-Step Chan Algorithm Processing ===")
     
-    # Setup logging
-    logging.basicConfig(level=logging.DEBUG)
+    # Setup logging to both console and file
+    log_file_path = setup_logging("chan_step_by_step.log", logging.DEBUG)
+    print(f"Logging to file: {log_file_path}")
     
     # Use shared configuration variables
     symbol = DEFAULT_SYMBOL
@@ -386,6 +514,10 @@ def demonstrate_individual_components():
     """Demonstrate individual component usage"""
     print("\n=== Individual Component Usage ===")
     
+    # Setup logging for individual components
+    log_file_path = setup_logging("chan_components.log", logging.INFO)
+    print(f"Logging to file: {log_file_path}")
+    
     # Import individual components with fallback handling
     try:
         from .mergekbar import KbarMerger
@@ -445,6 +577,10 @@ def demonstrate_individual_components():
 def demonstrate_market_analysis():
     """Demonstrate real-time market analysis"""
     print("\n=== Market Analysis Demo ===")
+    
+    # Setup logging for market analysis
+    log_file_path = setup_logging("chan_market_analysis.log", logging.INFO)
+    print(f"Logging to file: {log_file_path}")
     
     # Use shared configuration variables
     symbol = DEFAULT_SYMBOL
@@ -507,6 +643,10 @@ def demonstrate_multiple_symbols():
     """Demonstrate analysis with multiple symbols from database"""
     print("\n=== Multiple Symbols Analysis ===")
     
+    # Setup logging for multiple symbols analysis
+    log_file_path = setup_logging("chan_multiple_symbols.log", logging.INFO)
+    print(f"Logging to file: {log_file_path}")
+    
     # Get available symbols from database
     available_symbols = get_available_symbols()
     print(f"Available symbols: {len(available_symbols)}")
@@ -547,6 +687,19 @@ def main():
     """Main demonstration function"""
     print("Chan Algorithm Modular Implementation Demo")
     print("==========================================")
+    
+    # Example: Configure logging parameters (optional)
+    # Uncomment and modify as needed:
+    # configure_logging_parameters(
+    #     log_level="DEBUG",      # Options: DEBUG, INFO, WARNING, ERROR
+    #     log_dir="custom_logs",  # Custom log directory
+    #     file_prefix="trading",  # Custom prefix for log files
+    #     include_timestamp=True  # Include timestamp in filename
+    # )
+    
+    # Setup main logging (will use global config if set above)
+    log_file_path = setup_logging("chan_main.log", logging.INFO)
+    print(f"Main logging to file: {log_file_path}")
     
     # Show database status
     if DATABASE_AVAILABLE:
