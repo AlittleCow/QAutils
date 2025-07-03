@@ -128,6 +128,18 @@ class ChanProcessor:
         
         self.logger.debug("ChanProcessor initialized with all components and context management")
     
+    def get_current_rawkbar(self) -> Optional[Kbar]:
+        """
+        Get the last raw kbar from the current data
+        
+        Returns:
+            The last raw kbar if available, None otherwise
+        """
+        if self.raw_kbars:
+            return self.raw_kbars[-1]         
+        return None
+
+
     def process_kbars(self, kbars: List[Kbar]) -> Dict[str, Any]:
         """
         Process raw kbars through the complete Chan algorithm pipeline
@@ -274,19 +286,269 @@ class ChanProcessor:
         """
         Process a single new kbar incrementally
         
+        This method efficiently processes only the new K-bar with minimal re-processing.
+        It uses a smart approach to only re-process the necessary parts when structures
+        might have changed, rather than re-processing everything.
+        
         Args:
             new_kbar: New kbar to process
             
         Returns:
-            Incremental analysis results
+            Incremental analysis results with changes made
         """
         self.raw_kbars.append(new_kbar)
+        results = {}
+        changes_made = False
         
-        # For incremental processing, we'll re-process the last N kbars
-        # In a production system, this could be optimized for true incremental processing
-        recent_kbars = self.raw_kbars[-100:] if len(self.raw_kbars) > 100 else self.raw_kbars
-        
-        return self.process_kbars(recent_kbars)
+        self.logger.debug(f"\n\nProcessing incremental new kbar: {new_kbar}")
+        try:
+            # Update context with the new raw K-bar
+            if self.context and all([self.symbol, self.exchange, self.period]):
+                # Type guard: we know these are not None after the check above
+                assert self.symbol is not None
+                assert self.exchange is not None
+                assert self.period is not None
+                
+                # Update context with all current kbars (this should be efficient in the context implementation)
+                self.context.update_kbars(self.raw_kbars, self.symbol, self.exchange, self.period)
+            
+            # Step 1: Smart K-bar merging - only process recent K-bars for merging
+            self.logger.debug("Step 1: Processing new K-bar for merging")
+            
+            # Store previous counts to detect changes
+            prev_merged_count = len(self.merged_kbars)
+            
+            # Process only the last few K-bars to check for merging changes
+            # This is much more efficient than re-processing everything
+            merge_window = min(5, len(self.raw_kbars))
+            recent_kbars = self.raw_kbars[-merge_window:]
+            
+            # Re-process only recent merged K-bars
+            recent_merged = self.kbar_merger.process_kbar_sequence(recent_kbars)
+            
+            # Check if merged K-bars changed
+            if len(recent_merged) != len(self.merged_kbars[-(len(recent_merged)):]) or \
+               (recent_merged and self.merged_kbars and 
+                recent_merged[-1].close != self.merged_kbars[-1].close):
+                
+                # Update merged K-bars with new results
+                self.merged_kbars = self.merged_kbars[:-(len(recent_merged))] + recent_merged
+                changes_made = True
+                
+                results['step1_merge'] = {
+                    'action': 'updated_merged_kbars',
+                    'merged_kbar_count': len(self.merged_kbars),
+                    'window_size': merge_window,
+                    'previous_count': prev_merged_count,
+                    'current_count': len(self.merged_kbars)
+                }
+            else:
+                results['step1_merge'] = {
+                    'action': 'no_change',
+                    'merged_kbar_count': len(self.merged_kbars),
+                    'window_size': merge_window
+                }
+            
+            # Step 2: Check for new fractals only if merged K-bars changed
+            if changes_made and len(self.merged_kbars) >= 3:
+                self.logger.debug("Step 2: Checking for new fractals")
+                
+                prev_fractal_count = len(self.fractals)
+                
+                # Process only recent merged K-bars for fractals
+                fractal_window = min(10, len(self.merged_kbars))
+                recent_merged_for_fractals = self.merged_kbars[-fractal_window:]
+                
+                # Re-identify fractals in the recent window
+                recent_fractals = self.fractal_identifier.process_merged_kbars(recent_merged_for_fractals)
+                
+                # Check if we have new fractals
+                if len(recent_fractals) > 0:
+                    # Update fractals - remove old ones in the window and add new ones
+                    # This is a simplified approach - in a more sophisticated implementation,
+                    # we'd have better tracking of which fractals are new
+                    
+                    # Keep fractals that are before the window
+                    cutoff_time = recent_merged_for_fractals[0].timestamp_start if recent_merged_for_fractals else None
+                    if cutoff_time:
+                        old_fractals = [f for f in self.fractals if f.timestamp < cutoff_time]
+                        self.fractals = old_fractals + recent_fractals
+                    else:
+                        self.fractals = recent_fractals
+                    
+                    new_fractal_count = len(self.fractals) - prev_fractal_count
+                    if new_fractal_count != 0:
+                        changes_made = True
+                        results['step2_fractals'] = {
+                            'new_fractals': max(0, new_fractal_count),
+                            'total_fractals': len(self.fractals),
+                            'window_size': fractal_window,
+                            'previous_count': prev_fractal_count,
+                            'current_count': len(self.fractals)
+                        }
+                        
+                        # Update context with all current fractals
+                        if self.context and all([self.symbol, self.exchange, self.period]):
+                            assert self.symbol is not None
+                            assert self.exchange is not None
+                            assert self.period is not None
+                            
+                            self.context.update_fractals(self.fractals, self.symbol, self.exchange, self.period)
+                    else:
+                        results['step2_fractals'] = {
+                            'new_fractals': 0,
+                            'total_fractals': len(self.fractals)
+                        }
+                else:
+                    results['step2_fractals'] = {
+                        'new_fractals': 0,
+                        'total_fractals': len(self.fractals)
+                    }
+            
+            # Step 3: Check for new pens only if fractals changed
+            if changes_made and len(self.fractals) >= 2:
+                self.logger.debug("Step 3: Checking for new pens")
+                
+                prev_pen_count = len(self.pens)
+                
+                # Process fractals for pens
+                self.pen_processor.set_raw_kbars(self.raw_kbars)
+                
+                # Process only recent fractals
+                pen_window = min(10, len(self.fractals))
+                recent_fractals = self.fractals[-pen_window:]
+                
+                # Re-process pens with updated fractals
+                recent_pens = self.pen_processor.process_fractals(recent_fractals)
+                
+                if len(recent_pens) > 0:
+                    # Update pens - similar approach as fractals
+                    if len(recent_fractals) > 0:
+                        cutoff_time = recent_fractals[0].timestamp
+                        old_pens = [p for p in self.pens if p.start_time < cutoff_time]
+                        self.pens = old_pens + recent_pens
+                    else:
+                        self.pens = recent_pens
+                    
+                    new_pen_count = len(self.pens) - prev_pen_count
+                    if new_pen_count != 0:
+                        changes_made = True
+                        results['step3_pens'] = {
+                            'new_pens': max(0, new_pen_count),
+                            'total_pens': len(self.pens),
+                            'window_size': pen_window,
+                            'previous_count': prev_pen_count,
+                            'current_count': len(self.pens)
+                        }
+                        
+                        # Update context with all current pens
+                        if self.context and all([self.symbol, self.exchange, self.period]):
+                            assert self.symbol is not None
+                            assert self.exchange is not None
+                            assert self.period is not None
+                            
+                            self.context.update_pens(self.pens, self.symbol, self.exchange, self.period)
+                    else:
+                        results['step3_pens'] = {
+                            'new_pens': 0,
+                            'total_pens': len(self.pens)
+                        }
+                else:
+                    results['step3_pens'] = {
+                        'new_pens': 0,
+                        'total_pens': len(self.pens)
+                    }
+            
+            # Step 4: Check for new lines only if pens changed
+            if changes_made and len(self.pens) >= 3:
+                self.logger.debug("Step 4: Checking for new lines")
+                
+                prev_line_count = len(self.lines)
+                
+                # Process pens for lines
+                line_window = min(15, len(self.pens))
+                recent_pens = self.pens[-line_window:]
+                
+                # Re-process lines with updated pens
+                recent_lines = self.line_processor.process_pens(recent_pens)
+                
+                if len(recent_lines) > 0:
+                    # Update lines
+                    if len(recent_pens) > 0:
+                        cutoff_time = recent_pens[0].start_time
+                        old_lines = [l for l in self.lines if l.start_time < cutoff_time]
+                        self.lines = old_lines + recent_lines
+                    else:
+                        self.lines = recent_lines
+                    
+                    new_line_count = len(self.lines) - prev_line_count
+                    if new_line_count != 0:
+                        changes_made = True
+                        results['step4_lines'] = {
+                            'new_lines': max(0, new_line_count),
+                            'total_lines': len(self.lines),
+                            'window_size': line_window,
+                            'previous_count': prev_line_count,
+                            'current_count': len(self.lines)
+                        }
+                        
+                        # Update context with all current lines
+                        if self.context and all([self.symbol, self.exchange, self.period]):
+                            assert self.symbol is not None
+                            assert self.exchange is not None
+                            assert self.period is not None
+                            
+                            self.context.update_lines(self.lines, self.symbol, self.exchange, self.period, save_to_db=True)
+                    else:
+                        results['step4_lines'] = {
+                            'new_lines': 0,
+                            'total_lines': len(self.lines)
+                        }
+                else:
+                    results['step4_lines'] = {
+                        'new_lines': 0,
+                        'total_lines': len(self.lines)
+                    }
+            
+            # Check for line breaking with current price
+            if self.lines and changes_made:
+                current_price = new_kbar.close
+                recent_pens = self.pens[-3:] if len(self.pens) >= 3 else self.pens
+                
+                for line in self.lines[-3:]:  # Check last 3 lines
+                    break_type = self.line_processor.analyze_line_breaking(line, recent_pens)
+                    if break_type.value > 0:
+                        self.logger.info(f"Line breaking detected: {break_type.name} for {line.direction.name} line")
+                        
+                        if 'line_breaking' not in results:
+                            results['line_breaking'] = []
+                        results['line_breaking'].append({
+                            'line_direction': line.direction.name,
+                            'break_type': break_type.name,
+                            'current_price': current_price
+                        })
+            
+            return self._build_incremental_results(results, "Success" if changes_made else "No changes", changes_made)
+            
+        except Exception as e:
+            self.logger.error(f"Error in incremental Chan processing: {e}")
+            return self._build_incremental_results(results, f"Error: {str(e)}", False)
+    
+    def _build_incremental_results(self, results: Dict[str, Any], status: str, changes_made: bool) -> Dict[str, Any]:
+        """Build incremental processing results"""
+        return {
+            'status': status,
+            'changes_made': changes_made,
+            'incremental_processing': results,
+            'current_summary': {
+                'raw_kbars': len(self.raw_kbars),
+                'merged_kbars': len(self.merged_kbars),
+                'fractals': len(self.fractals),
+                'pens': len(self.pens),
+                'lines': len(self.lines)
+            },
+            'latest_structures': self._get_latest_structures() if changes_made else None
+        }
     
     def analyze_current_market_state(self, current_price: float) -> Dict[str, Any]:
         """

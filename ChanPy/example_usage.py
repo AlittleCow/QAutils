@@ -573,6 +573,81 @@ def demonstrate_step_by_step_processing():
     print("\nProcessing K-bars through Chan algorithm pipeline...")
     results = processor.process_kbars_auto()
     
+    # Process a single new kbar incrementally
+    print("\nProcessing a single new K-bar incrementally...")
+    # Create a simulated new K-bar for incremental processing
+    # Get the last raw kbar from the processor
+    last_raw_kbar = processor.get_current_rawkbar()
+    
+    if last_raw_kbar:
+        # Create a simulated new kbar by copying the last one and updating timestamp and close
+        from datetime import datetime, timedelta
+        import random
+        
+        # Parse the timestamp string to datetime object
+        # Assuming timestamp format is "YYYY-MM-DD HH:MM:SS"
+        try:
+            last_timestamp = datetime.strptime(last_raw_kbar.timestamp, "%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            # Try alternative format without seconds
+            try:
+                last_timestamp = datetime.strptime(last_raw_kbar.timestamp, "%Y-%m-%d %H:%M")
+            except ValueError:
+                # Try ISO format
+                try:
+                    last_timestamp = datetime.fromisoformat(last_raw_kbar.timestamp.replace('T', ' '))
+                except ValueError:
+                    # If all parsing fails, just use current time
+                    print(f"Warning: Could not parse timestamp '{last_raw_kbar.timestamp}', using current time")
+                    last_timestamp = datetime.now()
+        
+        # Update timestamp to next period (assuming 1-minute periods)
+        new_timestamp = last_timestamp + timedelta(days=1)
+        new_timestamp_str = new_timestamp.strftime("%Y-%m-%d %H:%M:%S")
+        
+        # Simulate a new close price (small random change)
+        price_change = random.uniform(-0.5, 0.5)  # Random change between -0.5 and +0.5
+        new_close = last_raw_kbar.close + price_change
+        
+        # Create new kbar with updated timestamp and close, keeping other values from last kbar
+        new_kbar = Kbar(
+            timestamp=new_timestamp_str,
+            open=last_raw_kbar.open,
+            high=last_raw_kbar.high,
+            low=last_raw_kbar.low,
+            close=new_close,
+            volume=last_raw_kbar.volume
+        )
+        
+        print(f"Created simulated K-bar: {new_kbar.timestamp} - O:{new_kbar.open:.2f} H:{new_kbar.high:.2f} L:{new_kbar.low:.2f} C:{new_kbar.close:.2f} V:{new_kbar.volume}")
+        
+        # Process the new K-bar incrementally
+        incremental_results = processor.process_new_kbar(new_kbar)
+        
+        print(f"Incremental processing status: {incremental_results['status']}")
+        print(f"Changes made: {incremental_results.get('changes_made', False)}")
+        
+        # Show what changed in the incremental processing
+        if 'incremental_processing' in incremental_results:
+            steps = incremental_results['incremental_processing']
+            print("\nIncremental Processing Changes:")
+            
+            for step_name, step_data in steps.items():
+                if step_name == 'step1_merge':
+                    print(f"  {step_name}: {step_data.get('action', 'unknown')} - {step_data.get('merged_kbar_count', 0)} merged K-bars")
+                elif step_name == 'step2_fractals':
+                    print(f"  {step_name}: {step_data.get('new_fractals', 0)} new fractals (total: {step_data.get('total_fractals', 0)})")
+                elif step_name == 'step3_pens':
+                    print(f"  {step_name}: {step_data.get('new_pens', 0)} new pens (total: {step_data.get('total_pens', 0)})")
+                elif step_name == 'step4_lines':
+                    print(f"  {step_name}: {step_data.get('new_lines', 0)} new lines (total: {step_data.get('total_lines', 0)})")
+                elif step_name == 'line_breaking':
+                    print(f"  Line breaking detected: {len(step_data)} instances")
+                    for break_info in step_data:
+                        print(f"    - {break_info['line_direction']} line: {break_info['break_type']} at price {break_info['current_price']:.2f}")
+    else:
+        print("No raw K-bar data available for incremental processing simulation")
+    
     # Display results
     print(f"\nProcessing Status: {results['status']}")
     # print(f"Summary: {results['summary']}")
