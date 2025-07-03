@@ -37,6 +37,20 @@ class Fractal:
         """Calculate fractal strength after initialization"""
         self.strength = self._calculate_strength()
     
+    def __repr__(self) -> str:
+        """
+        String representation of the fractal
+        
+        Returns:
+            Formatted string with fractal details
+        """
+        fractal_name = "TOP   " if self.fractal_type == FractalType.TOP else "BOTTOM"
+        
+        return (f"Fractal({fractal_name} @ {self.merged_kbar.timestamp_end} {self.price:.4f}, "
+                f"start: {self.left_kbar.timestamp_end}, "
+                f"end: {self.right_kbar.timestamp_end}, "
+                f"strength: {self.strength:.4f})")
+    
     def _calculate_strength(self) -> float:
         """
         Calculate the strength of the fractal pattern
@@ -193,8 +207,8 @@ class FractalIdentifier:
             fractal = self.identify_fractal(left, middle, right, i)
             if fractal:
                 fractals.append(fractal)
-                self.logger.debug(f"Found {fractal.fractal_type.name} fractal at index {i}, "
-                                f"price {fractal.price}, strength {fractal.strength:.4f}")
+                self.logger.debug(f"Fractal: {fractal}")
+                
         
         self.fractals = fractals
         self.logger.info(f"Identified {len(fractals)} fractals from {len(merged_kbars)} merged kbars")

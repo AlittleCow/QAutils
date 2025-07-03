@@ -181,22 +181,22 @@ class ChanProcessor:
             }
             
 
-            # # Update context with merged kbars
-            # if self.context and all([self.symbol, self.exchange, self.period]):
-            #     # Type guard: we know these are not None after the check above
-            #     assert self.symbol is not None
-            #     assert self.exchange is not None
-            #     assert self.period is not None
+            # Update context with merged kbars
+            if self.context and all([self.symbol, self.exchange, self.period]):
+                # Type guard: we know these are not None after the check above
+                assert self.symbol is not None
+                assert self.exchange is not None
+                assert self.period is not None
                 
-            #     self.context.update_merged_kbars(self.merged_kbars, self.symbol, self.exchange, self.period)
+                self.context.update_merged_kbars(self.merged_kbars, self.symbol, self.exchange, self.period)
             
-            # if len(self.merged_kbars) < 3:
-            #     self.logger.warning("Insufficient merged kbars for fractal analysis")
-            #     return self._build_results(results, "Insufficient merged kbars")
+            if len(self.merged_kbars) < 3:
+                self.logger.warning("Insufficient merged kbars for fractal analysis")
+                return self._build_results(results, "Insufficient merged kbars")
 
-            # # Step 2: Check consecutive merged kbars for fractals
-            # self.logger.info("Step 2: Identifying fractals from merged kbars")  
-            # self.fractals = self.fractal_identifier.process_merged_kbars(self.merged_kbars)
+            # Step 2: Check consecutive merged kbars for fractals
+            self.logger.info("Step 2: Identifying fractals from merged kbars")  
+            self.fractals = self.fractal_identifier.process_merged_kbars(self.merged_kbars)
             # results['step2_fractals'] = {
             #     'total_fractals': len(self.fractals),
             #     'top_fractals': len(self.fractal_identifier.get_top_fractals()),
