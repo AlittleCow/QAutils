@@ -101,7 +101,8 @@ class ChanProcessor:
         self.pen_processor = PenProcessor(
             min_pen_length=min_pen_length, 
             min_kbar_count=min_kbar_count,
-            pen_validator=self.pen_validator
+            pen_validator=self.pen_validator,
+            context=self.context
         )
         self.line_processor = LineProcessor(min_line_pens=min_line_pens)
         

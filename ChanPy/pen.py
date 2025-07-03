@@ -13,10 +13,12 @@ from enum import Enum
 from .fractal import Fractal, FractalType
 from .mergekbar import MergedKbar
 from .chantypes import KBarRelationship
+from .penrelationship import PenRelationshipHandler
 
 if TYPE_CHECKING:
     from .chan import Kbar
     from .penrules import PenRuleValidator
+    from .context import ChanContext
 
 
 class PenDirection(Enum):
@@ -124,7 +126,8 @@ class PenProcessor:
     """
     
     def __init__(self, min_pen_length: float = 0.0, min_kbar_count: int = 5, 
-                 pen_validator: Optional['PenRuleValidator'] = None):
+                 pen_validator: Optional['PenRuleValidator'] = None,
+                 context: Optional['ChanContext'] = None):
         """
         Initialize Pen Processor
         
@@ -132,13 +135,28 @@ class PenProcessor:
             min_pen_length: Minimum pen length for validation
             min_kbar_count: Minimum number of kbars for a valid pen
             pen_validator: Optional pen rule validator for advanced validation
+            context: Optional ChanContext for accessing Chan structures and state
         """
         self.logger = logging.getLogger(f"{__name__}")
         self.min_pen_length = min_pen_length
         self.min_kbar_count = min_kbar_count
         self.pen_validator = pen_validator
+        self.context = context
         self.pens: List[ChanPen] = []
         self.raw_kbars: List['Kbar'] = []
+        self.pen_relationship_handler: Optional[PenRelationshipHandler] = PenRelationshipHandler(context=context)
+    
+    def set_context(self, context: 'ChanContext'):
+        """
+        Set the ChanContext for the pen processor
+        
+        Args:
+            context: ChanContext instance
+        """
+        self.context = context
+        if self.pen_relationship_handler:
+            self.pen_relationship_handler.set_context(context)
+        self.logger.debug("ChanContext set for pen processor")
     
     def set_raw_kbars(self, kbars: List['Kbar']):
         """
@@ -622,7 +640,72 @@ class PenProcessor:
             # Analyze the 3 consecutive pens using KBarRelationship
             pen_relationship = self.get_three_pens_relationship(pen1, pen2, pen3)
             self.logger.debug(f"Three pen relationship: {pen_relationship.value} - {pen_relationship.get_description()}")
-            
+            # Use pen relationship handler to analyze the three pens
+            if hasattr(self, 'pen_relationship_handler') and self.pen_relationship_handler:
+                relationship_result = self.pen_relationship_handler.analyze_pen_relationship(
+                    pen1, pen2, pen3, pen_relationship
+                )
+                
+                self.logger.debug(f"Pen relationship analysis: {relationship_result.relationship.value}")
+                self.logger.debug(f"Can merge: {relationship_result.can_merge}")
+                self.logger.debug(f"Merge recommendation: {relationship_result.merge_recommendation}")
+                self.logger.debug(f"Confidence score: {relationship_result.confidence_score}")
+                
+                # Log special considerations
+                for consideration in relationship_result.special_considerations:
+                    self.logger.debug(f"Special consideration: {consideration}")
+                
+                # Log analysis details
+                for key, value in relationship_result.analysis_details.items():
+                    self.logger.debug(f"Analysis detail - {key}: {value}")
+                
+                # Create new pen if relationship analysis suggests it's appropriate
+                if relationship_result.can_merge:
+                    new_pen = self.create_pen(pen1.start_fractal, pen3.end_fractal)
+                    
+                    if new_pen:
+                        # Add information about the source pens and their relationship
+                        new_pen.validation_details = new_pen.validation_details or {}
+                        new_pen.validation_details['source_pens'] = [
+                            f"Pen1({pen1.start_time}-{pen1.end_time})",
+                            f"Pen2({pen2.start_time}-{pen2.end_time})",
+                            f"Pen3({pen3.start_time}-{pen3.end_time})"
+                        ]
+                        new_pen.validation_details['three_pen_relationship'] = pen_relationship.value
+                        new_pen.validation_details['three_pen_relationship_description'] = pen_relationship.get_description()
+                        
+                        # Add relationship analysis results
+                        new_pen.validation_details['relationship_analysis'] = {
+                            'can_merge': relationship_result.can_merge,
+                            'merge_recommendation': relationship_result.merge_recommendation,
+                            'confidence_score': relationship_result.confidence_score,
+                            'special_considerations': relationship_result.special_considerations,
+                            'analysis_details': relationship_result.analysis_details
+                        }
+                        
+                        new_pens.append(new_pen)
+                        self.logger.debug(f"Created new pen from 3 consecutive pens: {new_pen}")
+                        self.logger.debug(f"Relationship analysis: {relationship_result.relationship.value} - {relationship_result.merge_recommendation}")
+                else:
+                    self.logger.debug(f"Skipping pen creation - relationship analysis suggests not to merge: {relationship_result.merge_recommendation}")
+            else:
+                self.logger.warning("Pen relationship handler not available, using fallback logic")
+                # Fallback to original logic if pen relationship handler is not available
+                new_pen = self.create_pen(pen1.start_fractal, pen3.end_fractal)
+                
+                if new_pen:
+                    # Add information about the source pens and their relationship
+                    new_pen.validation_details = new_pen.validation_details or {}
+                    new_pen.validation_details['source_pens'] = [
+                        f"Pen1({pen1.start_time}-{pen1.end_time})",
+                        f"Pen2({pen2.start_time}-{pen2.end_time})",
+                        f"Pen3({pen3.start_time}-{pen3.end_time})"
+                    ]
+                    new_pen.validation_details['three_pen_relationship'] = pen_relationship.value
+                    new_pen.validation_details['three_pen_relationship_description'] = pen_relationship.get_description()
+                    
+                    new_pens.append(new_pen)
+                    self.logger.debug(f"Created new pen from 3 consecutive pens (fallback): {new_pen}")
             # # Create new pen from pen1's start to pen3's end
             # new_pen = self.create_pen(pen1.start_fractal, pen3.end_fractal)
             
@@ -679,7 +762,7 @@ class PenProcessor:
         # Get the relationship using KBarRelationship
         relationship = KBarRelationship.determine_relationship(d1, g1, d2, g2)
         
-        self.logger.debug(f"Three pen relationship analysis:")
+        self.logger.debug(f"\n\nThree pen relationship analysis:")
         self.logger.debug(f"{pen1}")
         self.logger.debug(f"{pen2}")
         self.logger.debug(f"{pen3}")
