@@ -9,7 +9,7 @@ import logging
 from typing import List, Optional, TYPE_CHECKING
 from dataclasses import dataclass, field
 from enum import Enum
-from .chantypes import KBarRelationship, get_kbar_objects_relationship, Direction
+from .chantypes import KBarRelationship, get_kbar_objects_relationship, Direction, KbarShape, get_direction_from_kbar_shape
 
 if TYPE_CHECKING:
     from .chan import Kbar
@@ -24,7 +24,8 @@ class ChanMergeKbarDirection:
     1. Line direction (if global line is available)
     2. Pen direction (if pens are available, use latest two pens)
     3. Fractal direction (if fractals are available, use latest 5, 3, or 1 fractal)
-    4. Fallback to UNKNOWN if no Chan structures are available
+    4. Relationship-based direction (if kbar relationship is available)
+    5. Fallback to UNKNOWN if no Chan structures are available
     """
     
     def __init__(self, context: Optional['ChanContext'] = None):
@@ -36,18 +37,23 @@ class ChanMergeKbarDirection:
         """
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
         self.context = context
+        self.current_relationship: Optional[KBarRelationship] = None
     
-    def determine_merge_direction(self, kbar1: 'Kbar', kbar2: 'Kbar') -> Direction:
+    def determine_merge_direction(self, kbar1: 'Kbar', kbar2: 'Kbar', relationship: Optional[KBarRelationship] = None) -> Direction:
         """
         Determine the merge direction using the fallback hierarchy
         
         Args:
             kbar1: First kbar (earlier in time)
             kbar2: Second kbar (later in time)
+            relationship: Optional KBarRelationship between the two kbars
             
         Returns:
             Direction for merging
         """
+        # Store the relationship for use in fallback
+        self.current_relationship = relationship
+        
         # Step 1: Try to get direction from global line
         line_direction = self._get_line_direction()
         if line_direction != Direction.UNKNOWN:
@@ -66,8 +72,8 @@ class ChanMergeKbarDirection:
             self.logger.debug(f"Using fractal direction: {fractal_direction}")
             return fractal_direction
         
-        # Step 4: Fallback to simple heuristic
-        self.logger.debug("No Chan structures available, using fallback heuristic")
+        # Step 4: Fallback to relationship-based and simple heuristic
+        self.logger.warning("No Chan structures available, using fallback heuristic")
         return self._get_fallback_direction(kbar1, kbar2)
     
     def _get_line_direction(self) -> Direction:
@@ -222,23 +228,172 @@ class ChanMergeKbarDirection:
     
     def _get_fallback_direction(self, kbar1: 'Kbar', kbar2: 'Kbar') -> Direction:
         """
-        Fallback direction determination using simple heuristic
+        Fallback direction determination using relationship and simple heuristic
         
         Args:
             kbar1: First kbar (earlier in time)
             kbar2: Second kbar (later in time)
             
         Returns:
-            Direction based on price movement
+            Direction based on relationship type and price movement
         """
-        # Simple heuristic: if both kbars are generally trending in the same direction,
-        # use that direction. Otherwise, use UNKNOWN for traditional merge behavior.
+        # First, try to use the relationship information if available
+        if self.current_relationship is not None:
+            direction = self._get_direction_from_relationship(self.current_relationship, kbar1, kbar2)
+            if direction != Direction.UNKNOWN:
+                self.logger.debug(f"Using relationship-based direction: {direction} for relationship: {self.current_relationship}")
+                return direction
         
+        # Second, try to use KbarShape information if no relationship
+        shape_direction = get_direction_from_kbar_shape(kbar1, kbar2)
+        if shape_direction != Direction.UNKNOWN:
+            self.logger.debug(f"Using KbarShape-based direction: {shape_direction}")
+            return shape_direction
+        
+        # Final fallback to simple heuristic based on price movement
         if kbar2.close > kbar1.close:
             return Direction.UP
         elif kbar2.close < kbar1.close:
             return Direction.DOWN
         else:
+            return Direction.UNKNOWN
+    
+    def _get_direction_from_relationship(self, relationship: KBarRelationship, kbar1: 'Kbar', kbar2: 'Kbar') -> Direction:
+        """
+        Determine merge direction based on the relationship type between two kbars
+        
+        Args:
+            relationship: The KBarRelationship between the two kbars
+            kbar1: First kbar (earlier in time)
+            kbar2: Second kbar (later in time)
+            
+        Returns:
+            Direction based on relationship analysis
+        """
+        # For containment relationships, analyze the containment pattern
+        if relationship == KBarRelationship.K1_CONTAINS_K2:
+            # K1 contains K2 - the containing kbar (K1) is dominant
+            # If K1 is bullish and K2 is contained within, lean towards up
+            if kbar1.close > kbar1.open:
+                return Direction.UP
+            elif kbar1.close < kbar1.open:
+                return Direction.DOWN
+            else:
+                # If K1 is neutral, check K2's direction
+                if kbar2.close > kbar2.open:
+                    return Direction.UP
+                elif kbar2.close < kbar2.open:
+                    return Direction.DOWN
+                    
+        elif relationship == KBarRelationship.K2_CONTAINS_K1:
+            # K2 contains K1 - the newer kbar (K2) is dominant
+            # Use K2's direction as it's the containing and more recent kbar
+            if kbar2.close > kbar2.open:
+                return Direction.UP
+            elif kbar2.close < kbar2.open:
+                return Direction.DOWN
+            else:
+                # If K2 is neutral, check K1's direction
+                if kbar1.close > kbar1.open:
+                    return Direction.UP
+                elif kbar1.close < kbar1.open:
+                    return Direction.DOWN
+                    
+        elif relationship == KBarRelationship.IDENTICAL:
+            # Same range - use the trend direction
+            if kbar2.close > kbar1.close:
+                return Direction.UP
+            elif kbar2.close < kbar1.close:
+                return Direction.DOWN
+                
+        elif relationship == KBarRelationship.SAME_HIGH_K1_LOWER:
+            # Same high, K1 extends lower - K1 is more bearish
+            if kbar1.close < kbar1.open:
+                return Direction.DOWN
+            elif kbar2.close > kbar2.open:
+                return Direction.UP
+                
+        elif relationship == KBarRelationship.SAME_HIGH_K2_LOWER:
+            # Same high, K2 extends lower - K2 is more bearish
+            if kbar2.close < kbar2.open:
+                return Direction.DOWN
+            elif kbar1.close > kbar1.open:
+                return Direction.UP
+                
+        elif relationship == KBarRelationship.SAME_LOW_K1_HIGHER:
+            # Same low, K1 extends higher - K1 is more bullish
+            if kbar1.close > kbar1.open:
+                return Direction.UP
+            elif kbar2.close < kbar2.open:
+                return Direction.DOWN
+                
+        elif relationship == KBarRelationship.SAME_LOW_K2_HIGHER:
+            # Same low, K2 extends higher - K2 is more bullish
+            if kbar2.close > kbar2.open:
+                return Direction.UP
+            elif kbar1.close < kbar1.open:
+                return Direction.DOWN
+        
+        # For other relationships or when no clear direction is determined
+        return Direction.UNKNOWN
+    
+    def _get_direction_from_kbar_shape(self, kbar1: 'Kbar', kbar2: 'Kbar') -> Direction:
+        """
+        Determine merge direction based on KbarShape analysis
+        
+        This method analyzes the shapes of both kbars to determine the merge direction.
+        It prioritizes the more recent kbar (kbar2) shape but also considers kbar1.
+        
+        Args:
+            kbar1: First kbar (earlier in time)
+            kbar2: Second kbar (later in time)
+            
+        Returns:
+            Direction based on KbarShape analysis
+        """
+        try:
+            # Determine shapes for both kbars
+            shape1 = KbarShape.determine_shape(kbar1.open, kbar1.high, kbar1.low, kbar1.close)
+            shape2 = KbarShape.determine_shape(kbar2.open, kbar2.high, kbar2.low, kbar2.close)
+            
+            self.logger.debug(f"Kbar1 shape: {shape1.name}, Kbar2 shape: {shape2.name}")
+            
+            # Priority 1: If kbar2 (more recent) has a strong directional shape, use it
+            if shape2.is_bullish():
+                return Direction.UP
+            elif shape2.is_bearish():
+                return Direction.DOWN
+            
+            # Priority 2: If kbar2 is doji, check kbar1's shape
+            if shape2.is_doji():
+                if shape1.is_bullish():
+                    return Direction.UP
+                elif shape1.is_bearish():
+                    return Direction.DOWN
+            
+            # Priority 3: If neither has clear direction, analyze body sizes and patterns
+            # Check for continuation patterns - if both have same bias, continue that direction
+            if shape1.is_bullish() and shape2.is_doji():
+                # Bullish followed by doji - possible continuation up
+                return Direction.UP
+            elif shape1.is_bearish() and shape2.is_doji():
+                # Bearish followed by doji - possible continuation down
+                return Direction.DOWN
+            
+            # Priority 4: Check for reversal patterns
+            # Strong opposite patterns might indicate reversal
+            if shape1.is_bullish() and shape2.is_bearish():
+                # Bullish to bearish - trend might be turning down
+                return Direction.DOWN
+            elif shape1.is_bearish() and shape2.is_bullish():
+                # Bearish to bullish - trend might be turning up
+                return Direction.UP
+            
+            # If both are doji or no clear pattern, return UNKNOWN
+            return Direction.UNKNOWN
+            
+        except Exception as e:
+            self.logger.debug(f"Failed to determine direction from KbarShape: {e}")
             return Direction.UNKNOWN
 
 
@@ -420,7 +575,7 @@ class KbarMerger:
             # Convert single kbar to MergedKbar
             if len(kbars) == 1:
                 kbar = kbars[0]
-                return [MergedKbar(
+                single_merged = MergedKbar(
                     timestamp_start=kbar.timestamp,
                     timestamp_end=kbar.timestamp,
                     open=kbar.open,
@@ -431,7 +586,9 @@ class KbarMerger:
                     original_count=1,
                     mergetype=None,  # No actual merging happened
                     merge_direction=Direction.UNKNOWN
-                )]
+                )
+                self.logger.debug(f"Single kbar converted to MergedKbar: {single_merged}")
+                return [single_merged]
             return []
         
         merged_result = []
@@ -489,6 +646,7 @@ class KbarMerger:
                         merge_direction=Direction.UNKNOWN
                     )
                     merged_result.append(single_merged)
+                    self.logger.debug(f"kbar [{i}] added to merged result: {single_merged}")
                     i += 1
             else:
                 # Add the last kbar as single merged kbar
@@ -604,5 +762,37 @@ class KbarMerger:
         Returns:
             Direction: The merge direction to use
         """
+        # Get the relationship between the two kbars
+        relationship = self._get_merge_relationship(kbar1, kbar2)
+        
         # Use the ChanMergeKbarDirection class to determine the direction
-        return self.direction_determiner.determine_merge_direction(kbar1, kbar2) 
+        return self.direction_determiner.determine_merge_direction(kbar1, kbar2, relationship)
+    
+    def _get_direction_from_single_kbar_shape(self, kbar: 'Kbar') -> Direction:
+        """
+        Determine direction from a single kbar's shape
+        
+        This method is used for the first mergekbar case when there's only one kbar.
+        
+        Args:
+            kbar: The kbar to analyze
+            
+        Returns:
+            Direction based on the kbar's shape
+        """
+        try:
+            shape = KbarShape.determine_shape(kbar.open, kbar.high, kbar.low, kbar.close)
+            
+            self.logger.debug(f"Single kbar shape: {shape.name}")
+            
+            if shape.is_bullish():
+                return Direction.UP
+            elif shape.is_bearish():
+                return Direction.DOWN
+            else:
+                # For doji patterns, return UNKNOWN
+                return Direction.UNKNOWN
+                
+        except Exception as e:
+            self.logger.debug(f"Failed to determine direction from single KbarShape: {e}")
+            return Direction.UNKNOWN 

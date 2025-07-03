@@ -341,7 +341,8 @@ def create_sample_kbars(count: int = 50) -> List[Kbar]:
 
 
 def configure_logging_parameters(log_level: str = "INFO", log_dir: str = "logs", 
-                                file_prefix: str = "chan", include_timestamp: bool = True):
+                                file_prefix: str = "chan", include_timestamp: bool = True,
+                                overwrite_log: bool = True):
     """
     Configure logging parameters globally
     
@@ -350,6 +351,7 @@ def configure_logging_parameters(log_level: str = "INFO", log_dir: str = "logs",
         log_dir: Directory for log files (relative to current directory)
         file_prefix: Prefix for log file names
         include_timestamp: Whether to include timestamp in log filenames
+        overwrite_log: Whether to overwrite existing log files (True) or append to them (False)
     """
     global LOGGING_CONFIG
     
@@ -372,20 +374,23 @@ def configure_logging_parameters(log_level: str = "INFO", log_dir: str = "logs",
         'level': numeric_level,
         'log_dir': log_dir,
         'file_prefix': file_prefix,
-        'timestamp_suffix': timestamp_suffix
+        'timestamp_suffix': timestamp_suffix,
+        'overwrite_log': overwrite_log
     }
     
+    overwrite_desc = "overwrite" if overwrite_log else "append"
     print(f"Logging configured: Level={log_level.upper()}, Dir={log_dir}, "
-          f"Prefix={file_prefix}, Timestamp={include_timestamp}")
+          f"Prefix={file_prefix}, Timestamp={include_timestamp}, Mode={overwrite_desc}")
 
 
-def setup_logging(log_file: str = "chan_analysis.log", log_level: int = logging.DEBUG):
+def setup_logging(log_file: str = "chan_analysis.log", log_level: int = logging.DEBUG, overwrite_log: bool = True):
     """
     Setup logging to both console and file
     
     Args:
         log_file: Path to the log file
         log_level: Logging level (DEBUG, INFO, WARNING, ERROR)
+        overwrite_log: If True, overwrite existing log file; if False, append to it
     """
     # Use global config if available
     if 'LOGGING_CONFIG' in globals():
@@ -419,10 +424,11 @@ def setup_logging(log_file: str = "chan_analysis.log", log_level: int = logging.
         '%(levelname)s - %(message)s'
     )
     
-    # Create file handler with same simple format as console
+    # Create file handler with configurable mode (overwrite or append)
+    file_mode = 'w' if overwrite_log else 'a'
     # To restore detailed file logging, uncomment the next line and comment the one after:
     # file_handler.setFormatter(detailed_formatter)
-    file_handler = logging.FileHandler(log_file_path, mode='a', encoding='utf-8')
+    file_handler = logging.FileHandler(log_file_path, mode=file_mode, encoding='utf-8')
     file_handler.setLevel(log_level)
     file_handler.setFormatter(simple_formatter)
     
@@ -438,7 +444,8 @@ def setup_logging(log_file: str = "chan_analysis.log", log_level: int = logging.
     logger.addHandler(console_handler)
     
     # Log the setup
-    logger.info(f"Logging setup complete - File: {log_file_path}, Level: {logging.getLevelName(log_level)}")
+    mode_desc = "overwrite" if overwrite_log else "append"
+    logger.info(f"Logging setup complete - File: {log_file_path}, Level: {logging.getLevelName(log_level)}, Mode: {mode_desc}")
     
     return log_file_path
 
