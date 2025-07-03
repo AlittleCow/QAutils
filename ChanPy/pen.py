@@ -15,6 +15,7 @@ from .mergekbar import MergedKbar
 
 if TYPE_CHECKING:
     from .chan import Kbar
+    from .penrules import PenRuleValidator
 
 
 class PenDirection(Enum):
@@ -111,17 +112,20 @@ class PenProcessor:
     Validates pens against raw kbar data and handles pen breaking analysis.
     """
     
-    def __init__(self, min_pen_length: float = 0.0, min_kbar_count: int = 5):
+    def __init__(self, min_pen_length: float = 0.0, min_kbar_count: int = 5, 
+                 pen_validator: Optional['PenRuleValidator'] = None):
         """
         Initialize Pen Processor
         
         Args:
             min_pen_length: Minimum pen length for validation
             min_kbar_count: Minimum number of kbars for a valid pen
+            pen_validator: Optional pen rule validator for advanced validation
         """
         self.logger = logging.getLogger(f"{__name__}")
         self.min_pen_length = min_pen_length
         self.min_kbar_count = min_kbar_count
+        self.pen_validator = pen_validator
         self.pens: List[ChanPen] = []
         self.raw_kbars: List['Kbar'] = []
     
@@ -279,6 +283,19 @@ class PenProcessor:
         if length < self.min_pen_length:
             return None
         
+        # Advanced pen validation using pen rules (if validator is provided)
+        if self.pen_validator:
+            is_valid, failed_rules, validation_details = self.pen_validator.validate_pen(
+                start_fractal, end_fractal, pen_kbars
+            )
+            
+            if not is_valid:
+                self.logger.debug(f"Pen validation failed: {[rule.value for rule in failed_rules]}")
+                self.logger.debug(f"Validation details: {validation_details}")
+                return None
+            
+            self.logger.debug(f"Pen validation passed: {validation_details['passed_rules']}/{validation_details['total_rules']} rules")
+
         pen = ChanPen(
             start_fractal=start_fractal,
             end_fractal=end_fractal,
@@ -290,6 +307,11 @@ class PenProcessor:
             confirmed=True,
             merged_kbars=[]  # Initialize as empty list - to be populated later
         )
+        
+        # Assess pen quality if validator is available
+        if self.pen_validator:
+            quality_rating, quality_details = self.pen_validator.assess_pen_quality(pen)
+            self.logger.debug(f"Pen quality: {quality_rating.value} (score: {quality_details['total_score']})")
         
         return pen
     
@@ -447,18 +469,66 @@ class PenProcessor:
         return self.pens.copy()
     
     def set_parameters(self, min_pen_length: Optional[float] = None, 
-                      min_kbar_count: Optional[int] = None):
+                      min_kbar_count: Optional[int] = None,
+                      pen_validator: Optional['PenRuleValidator'] = None):
         """
         Set pen processing parameters
         
         Args:
             min_pen_length: Minimum pen length
             min_kbar_count: Minimum kbar count
+            pen_validator: Pen rule validator
         """
         if min_pen_length is not None:
             self.min_pen_length = min_pen_length
         if min_kbar_count is not None:
             self.min_kbar_count = min_kbar_count
+        if pen_validator is not None:
+            self.pen_validator = pen_validator
         
         self.logger.info(f"Updated parameters: min_length={self.min_pen_length}, "
-                        f"min_kbar_count={self.min_kbar_count}") 
+                        f"min_kbar_count={self.min_kbar_count}, "
+                        f"pen_validator={'enabled' if self.pen_validator else 'disabled'}")
+    
+    def set_pen_validator(self, pen_validator: 'PenRuleValidator'):
+        """
+        Set pen rule validator
+        
+        Args:
+            pen_validator: Pen rule validator instance
+        """
+        self.pen_validator = pen_validator
+        self.logger.info("Pen rule validator enabled")
+    
+    def get_pen_validator(self) -> Optional['PenRuleValidator']:
+        """
+        Get current pen rule validator
+        
+        Returns:
+            Current pen rule validator or None
+        """
+        return self.pen_validator
+    
+    def validate_pen_with_rules(self, start_fractal: Fractal, end_fractal: Fractal, 
+                               pen_kbars: List['Kbar']) -> Tuple[bool, List[str], Dict[str, Any]]:
+        """
+        Validate pen using pen rules validator
+        
+        Args:
+            start_fractal: Starting fractal
+            end_fractal: Ending fractal
+            pen_kbars: Raw kbars between fractals
+            
+        Returns:
+            Tuple of (is_valid, failed_rule_names, validation_details)
+        """
+        if not self.pen_validator:
+            return True, [], {"message": "No pen validator configured"}
+        
+        is_valid, failed_rules, validation_details = self.pen_validator.validate_pen(
+            start_fractal, end_fractal, pen_kbars
+        )
+        
+        failed_rule_names = [rule.value for rule in failed_rules]
+        
+        return is_valid, failed_rule_names, validation_details 

@@ -15,6 +15,7 @@ from typing import List, Dict, Any, Optional
 from .mergekbar import KbarMerger, MergedKbar
 from .fractal import FractalIdentifier, Fractal
 from .pen import PenProcessor, ChanPen
+from .penrules import PenRuleValidator
 from .line import LineProcessor, ChanLine
 from .chan import Kbar  # Import Kbar from existing chan module
 from .context import ChanContext, ChanState  # Import context management
@@ -96,9 +97,11 @@ class ChanProcessor:
         # Initialize all processors
         self.kbar_merger = KbarMerger(context=self.context)
         self.fractal_identifier = FractalIdentifier(strict_mode=strict_fractal_mode)
+        self.pen_validator = PenRuleValidator()
         self.pen_processor = PenProcessor(
             min_pen_length=min_pen_length, 
-            min_kbar_count=min_kbar_count
+            min_kbar_count=min_kbar_count,
+            pen_validator=self.pen_validator
         )
         self.line_processor = LineProcessor(min_line_pens=min_line_pens)
         
