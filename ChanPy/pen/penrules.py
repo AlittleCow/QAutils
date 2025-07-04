@@ -526,6 +526,9 @@ class FractalSeparationRule(PenRule):
     
     The rule validates that fractals have different indices, timestamps, and maintain
     minimum separation to ensure proper pen formation according to Chan theory.
+    
+    Special case: If fractals meet the minimum kbar count from raw kbars perspective,
+    they are considered valid even if there's overlap at the merged kbar level.
     """
     
     def validate(self, start_fractal: Fractal, end_fractal: Fractal, 
@@ -537,11 +540,14 @@ class FractalSeparationRule(PenRule):
         separated and don't share the same K-line position, which would violate
         fundamental Chan theory principles for pen formation.
         
+        Special handling: If the pen meets minimum kbar count from raw kbars perspective,
+        fractals are considered valid even with merged kbar level overlap.
+        
         Args:
             start_fractal: The starting fractal of the pen
             end_fractal: The ending fractal of the pen
-            pen_kbars: List of kbars between fractals (not used in this rule)
-            config: Configuration settings (not used in this rule)
+            pen_kbars: List of kbars between fractals (used for raw kbar validation)
+            config: Configuration settings (min_kbar_count used for raw kbar check)
             
         Returns:
             PenValidationResult.VALID if fractals are properly separated,
@@ -566,14 +572,34 @@ class FractalSeparationRule(PenRule):
         end_fractal_end = end_fractal.right_kbar.timestamp_end
         
         # Check if time ranges overlap
-        if start_fractal_end >= end_fractal_start and start_fractal_start <= end_fractal_end:
+        has_time_overlap = start_fractal_end >= end_fractal_start and start_fractal_start <= end_fractal_end
+        
+        # Check minimum separation between fractals
+        separation = abs(start_fractal.index - end_fractal.index)
+        
+        # EXCLUSIVE CASE: If there's overlap at merged kbar level but raw kbars meet minimum count
+        if has_time_overlap or separation < 2:
+            # Check if pen meets minimum kbar count from raw kbars perspective
+            if len(pen_kbars) >= config.min_kbar_count:
+                # Additional validation: ensure fractals don't share the exact same raw kbar
+                if not self._fractals_share_raw_kbar(start_fractal, end_fractal):
+                    self.logger.debug(f"Fractal separation validation passed (exclusive case): "
+                                    f"raw kbars count={len(pen_kbars)} >= min_required={config.min_kbar_count}, "
+                                    f"no raw kbar sharing detected")
+                    return PenValidationResult.VALID
+                else:
+                    self.logger.debug(f"Fractal separation validation failed: fractals share the same raw kbar")
+                    return PenValidationResult.INVALID_FRACTAL_SEPARATION
+            else:
+                self.logger.debug(f"Fractal separation validation failed: insufficient raw kbars count={len(pen_kbars)} < min_required={config.min_kbar_count}")
+        
+        # Standard validation for cases without overlap
+        if has_time_overlap:
             self.logger.debug(f"Fractal separation validation failed: time ranges overlap")
             self.logger.debug(f"Start fractal range: [{start_fractal_start}, {start_fractal_end}]")
             self.logger.debug(f"End fractal range: [{end_fractal_start}, {end_fractal_end}]")
             return PenValidationResult.INVALID_FRACTAL_SEPARATION
         
-        # Ensure minimum separation between fractals
-        separation = abs(start_fractal.index - end_fractal.index)
         if separation < 2:
             self.logger.debug(f"Fractal separation validation failed: insufficient separation {separation} < 2")
             self.logger.debug(f"Start fractal index: {start_fractal.index}")
@@ -582,6 +608,92 @@ class FractalSeparationRule(PenRule):
         
         self.logger.debug(f"Fractal separation validation passed: separation={separation}, no time range overlap")
         return PenValidationResult.VALID
+    
+    def _fractals_share_raw_kbar(self, start_fractal: Fractal, end_fractal: Fractal) -> bool:
+        """
+        Check if fractals share the exact same raw kbar
+        
+        This method examines the raw kbar components of both fractals to determine
+        if they share any of the same underlying raw kbars, which would indicate
+        a true violation of the separation rule.
+        
+        Relaxing exclusive cases:
+        1. If start fractal's center + right raw kbars count >= 3, allow sharing
+        2. If end fractal's center + left raw kbars count >= 3, allow sharing
+        3. These cases handle scenarios where fractals have sufficient raw kbar coverage
+           despite sharing boundary raw kbars
+        
+        Args:
+            start_fractal: The starting fractal to check
+            end_fractal: The ending fractal to check
+            
+        Returns:
+            True if fractals share the same raw kbar AND don't meet relaxing conditions,
+            False if no sharing or relaxing conditions are met
+        """
+        # Get all raw kbar timestamps from start fractal
+        start_raw_timestamps = set()
+        start_center_right_count = 0  # Count of center + right raw kbars
+        
+        for kbar in [start_fractal.left_kbar, start_fractal.merged_kbar, start_fractal.right_kbar]:
+            if hasattr(kbar, 'original_kbars') and kbar.original_kbars:
+                kbar_timestamps = {raw_kbar.timestamp for raw_kbar in kbar.original_kbars}
+                start_raw_timestamps.update(kbar_timestamps)
+                
+                # Count center + right raw kbars for start fractal
+                if kbar == start_fractal.merged_kbar or kbar == start_fractal.right_kbar:
+                    start_center_right_count += len(kbar_timestamps)
+            else:
+                # If no original_kbars attribute, use the kbar's own timestamp
+                # For MergedKbar, use timestamp_end as the primary timestamp
+                if hasattr(kbar, 'timestamp_end'):
+                    start_raw_timestamps.add(kbar.timestamp_end)
+                    # Count as 1 raw kbar for center + right
+                    if kbar == start_fractal.merged_kbar or kbar == start_fractal.right_kbar:
+                        start_center_right_count += 1
+        
+        # Get all raw kbar timestamps from end fractal
+        end_raw_timestamps = set()
+        end_center_left_count = 0  # Count of center + left raw kbars
+        
+        for kbar in [end_fractal.left_kbar, end_fractal.merged_kbar, end_fractal.right_kbar]:
+            if hasattr(kbar, 'original_kbars') and kbar.original_kbars:
+                kbar_timestamps = {raw_kbar.timestamp for raw_kbar in kbar.original_kbars}
+                end_raw_timestamps.update(kbar_timestamps)
+                
+                # Count center + left raw kbars for end fractal
+                if kbar == end_fractal.merged_kbar or kbar == end_fractal.left_kbar:
+                    end_center_left_count += len(kbar_timestamps)
+            else:
+                # If no original_kbars attribute, use the kbar's own timestamp
+                # For MergedKbar, use timestamp_end as the primary timestamp
+                if hasattr(kbar, 'timestamp_end'):
+                    end_raw_timestamps.add(kbar.timestamp_end)
+                    # Count as 1 raw kbar for center + left
+                    if kbar == end_fractal.merged_kbar or kbar == end_fractal.left_kbar:
+                        end_center_left_count += 1
+        
+        # Check for intersection
+        shared_timestamps = start_raw_timestamps.intersection(end_raw_timestamps)
+        
+        if shared_timestamps:
+            self.logger.debug(f"Raw kbar sharing detected: {len(shared_timestamps)} shared timestamps")
+            self.logger.debug(f"Shared timestamps: {sorted(shared_timestamps)}")
+            
+            # Apply relaxing exclusive cases
+            if start_center_right_count >= 3:
+                self.logger.debug(f"Relaxing case 1: start fractal center+right raw kbars count={start_center_right_count} >= 3, allowing sharing")
+                return False  # Allow sharing
+            
+            if end_center_left_count >= 3:
+                self.logger.debug(f"Relaxing case 2: end fractal center+left raw kbars count={end_center_left_count} >= 3, allowing sharing")
+                return False  # Allow sharing
+            
+            self.logger.debug(f"Raw kbar sharing not allowed: start_center_right_count={start_center_right_count}, end_center_left_count={end_center_left_count}")
+            return True  # Sharing detected and no relaxing conditions met
+        
+        self.logger.debug(f"No raw kbar sharing detected")
+        return False
     
     def get_rule_name(self) -> str:
         """
@@ -665,7 +777,6 @@ class FractalLevelRelationRule(PenRule):
             String identifier for the FractalLevelRelationRule
         """
         return "FractalLevelRelationRule"
-
 
 class PenRuleValidator:
     """
