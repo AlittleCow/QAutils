@@ -191,18 +191,19 @@ class PenProcessor:
         for i in range(len(fractals) - 1):
             start_fractal = fractals[i]
             end_fractal = fractals[i + 1]
-            self.logger.debug(f"🖊️ Creating pen from {start_fractal} to {end_fractal} -->>>")
+            self.logger.debug(f"\n")
+            self.logger.debug(f"🖊️ Creating pen from {start_fractal} to {end_fractal}")
             pen = self.create_validate_pen(start_fractal, end_fractal)
             if pen:
                 initial_pens.append(pen)
                 self.logger.debug(f"Initial pen: {pen} - Valid: {pen.is_valid}")
         
         passed_count = sum(1 for pen in initial_pens if pen.is_valid)
-        self.logger.info(f"Step 1: Created {len(initial_pens)} initial pens from {len(fractals)} fractals ({passed_count} passed validation)\n\n")
-        
+        self.logger.info(f"📊 Step 1: Created {len(initial_pens)} valid/invalid initial pens from {len(fractals)} fractals ({passed_count} passed validation)\n\n")
         # Step 2: Process every 3 consecutive pens
         processed_pens = self.process_three_consecutive_pens(initial_pens)
-        self.logger.info(f"Step 2: Processed into {len(processed_pens)} pens")
+        self.logger.info(f"Step 2: Processed {len(processed_pens)} pens with pen shape")
+        self.logger.debug(f"\n")
         
         # Step 3: Filter to only keep valid pens
         valid_pens = [pen for pen in processed_pens if pen.is_valid]
@@ -450,6 +451,7 @@ class PenProcessor:
             pen1 = pen_list[current_pen_index]
             pen2 = pen_list[current_pen_index + 1]
             pen3 = pen_list[current_pen_index + 2]
+            self.logger.debug(f"---------->\n")
             self.logger.debug(f"🖊️ Processing 3 consecutive pens")
             self.logger.debug(f"🖊️ Pen 1: {pen1}")
             self.logger.debug(f"🖊️ Pen 2: {pen2}")

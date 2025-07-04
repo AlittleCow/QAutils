@@ -499,6 +499,7 @@ class PenRelationshipHandler:
         if self.context:
             try:
                 # Check if there's a global line or any existing line
+                self.logger.info(f"Checking if there's a global line or any existing line using context")
                 global_line = self.context.get_global_line()
                 latest_line = self.context.get_latest_line()
                 
