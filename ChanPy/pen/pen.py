@@ -16,13 +16,13 @@ from ..chantypes import KBarRelationship
 from .pentypes import ChanPen, PenDirection, PenBreakType
 from .penrelationship import PenRelationshipHandler, get_three_pens_relationship
 from .penrules import PenRuleValidator
+from ..line.lineutils import create_line_from_pen
 from datetime import datetime
 
 if TYPE_CHECKING:
     from ..chan import Kbar
     from ..context import ChanContext
-    from ..line import ChanLine, LineDirection, LineStatus, LineBreakType
-    from ..line.lineutils import create_line_from_pen
+    from ..line import ChanLine
 
 
 class PenProcessor:

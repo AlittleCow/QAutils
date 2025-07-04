@@ -13,15 +13,13 @@ from enum import Enum
 from ..fractal import Fractal, FractalType
 from ..mergekbar import MergedKbar
 from ..chantypes import KBarRelationship
-from ..pen import ChanPen, PenDirection, PenBreakType
+from ..pen.pentypes import ChanPen, PenDirection, PenBreakType
 from datetime import datetime
 from .linetypes import (
     LineDirection, LineBreakType, LineStatus, LineHistoryEntry,
     LineEventType, LineFormationMethod, BreakAnalysisConstants,
     LineHistory, ChanLine
 )
-from .lineutils import create_line_from_pen
-
 if TYPE_CHECKING:
     from ..chan import Kbar
     from ..context import ChanContext

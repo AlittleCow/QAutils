@@ -6,15 +6,19 @@ These utilities are designed to be standalone and avoid circular imports.
 """
 
 import logging
-from typing import Optional
-from ..pen import ChanPen, PenDirection
-from .linetypes import (
-    LineDirection, LineBreakType, LineStatus, 
-    ChanLine
-)
+from typing import Optional, TYPE_CHECKING
+from ..pen.pentypes import ChanPen, PenDirection
+
+if TYPE_CHECKING:
+    from .linetypes import LineDirection, LineBreakType, LineStatus, ChanLine
+else:
+    from .linetypes import (
+        LineDirection, LineBreakType, LineStatus, 
+        ChanLine
+    )
 
 
-def create_line_from_pen(pen: ChanPen) -> Optional[ChanLine]:
+def create_line_from_pen(pen: ChanPen) -> Optional['ChanLine']:
     """
     Create a line from a single pen
     
