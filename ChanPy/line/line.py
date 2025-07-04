@@ -15,164 +15,16 @@ from ..mergekbar import MergedKbar
 from ..chantypes import KBarRelationship
 from ..pen import ChanPen, PenDirection, PenBreakType
 from datetime import datetime
+from .linetypes import (
+    LineDirection, LineBreakType, LineStatus, LineHistoryEntry,
+    LineEventType, LineFormationMethod, BreakAnalysisConstants,
+    LineHistory, ChanLine
+)
+from .lineutils import create_line_from_pen
 
 if TYPE_CHECKING:
     from ..chan import Kbar
     from ..context import ChanContext
-
-
-class LineDirection(Enum):
-    """Line direction enumeration"""
-    UP = 1      # Upward line (向上线段)
-    DOWN = -1   # Downward line (向下线段)
-
-
-class LineBreakType(Enum):
-    """Line breaking type enumeration"""
-    NONE = 0           # No breaking
-    PARTIAL_BREAK = 1  # Partial breaking
-    FULL_BREAK = 2     # Full breaking
-    CONFIRMED_BREAK = 3  # Confirmed breaking
-
-
-class LineStatus(Enum):
-    """Line status enumeration"""
-    FORMING = 0        # Line is still forming
-    COMPLETED = 1      # Line is completed
-    BROKEN = 2         # Line has been broken
-
-
-@dataclass
-class ChanLine:
-    """Chan Line data structure"""
-    start_pen: ChanPen
-    end_pen: ChanPen
-    pens: List[ChanPen] = field(default_factory=list)
-    direction: LineDirection = LineDirection.UP
-    high: float = 0.0
-    low: float = 0.0
-    length: float = 0.0 # 线段幅度
-    status: LineStatus = LineStatus.FORMING
-    break_type: LineBreakType = LineBreakType.NONE
-    break_price: Optional[float] = None
-    break_pen: Optional[ChanPen] = None
-    is_global: bool = False  # Whether this is a global line
-    confirmed: bool = False
-    
-    def __post_init__(self):
-        """Calculate line properties after initialization"""
-        self._calculate_properties()
-    
-    def _calculate_properties(self):
-        """Calculate line high, low, length, and direction"""
-        if not self.pens:
-            self.pens = [self.start_pen, self.end_pen]
-        
-        # Calculate high and low from all pens
-        all_highs = [pen.high for pen in self.pens]
-        all_lows = [pen.low for pen in self.pens]
-        self.high = max(all_highs)
-        self.low = min(all_lows)
-        
-        # Determine direction based on start and end pen endpoints
-        if self.end_pen.end_price > self.start_pen.start_price:
-            self.direction = LineDirection.UP
-        else:
-            self.direction = LineDirection.DOWN
-        
-        # Calculate length
-        self.length = self.high - self.low
-    
-    @property
-    def start_price(self) -> float:
-        """Get line start price"""
-        return self.start_pen.start_price
-    
-    @property
-    def end_price(self) -> float:
-        """Get line end price"""
-        return self.end_pen.end_price
-    
-    @property
-    def start_time(self) -> str:
-        """Get line start time"""
-        return self.start_pen.start_time
-    
-    @property
-    def end_time(self) -> str:
-        """Get line end time"""
-        return self.end_pen.end_time
-    
-    @property
-    def pen_count(self) -> int:
-        """Get number of pens in this line"""
-        return len(self.pens)
-    
-    def __repr__(self) -> str:
-        """String representation for debugging and display"""
-        # Format direction with arrow
-        direction_arrow = "↗" if self.direction == LineDirection.UP else "↘"
-        
-        # Format timestamps to be more readable
-        start_time_str = self.start_time.replace('+00:00', '').replace('T', ' ')
-        end_time_str = self.end_time.replace('+00:00', '').replace('T', ' ')
-        if len(start_time_str) > 19:
-            start_time_str = start_time_str[:19]
-        if len(end_time_str) > 19:
-            end_time_str = end_time_str[:19]
-        
-        # Get start and end peak values
-        start_peak = self.start_price
-        end_peak = self.end_price
-        
-        # Calculate price change
-        price_change = end_peak - start_peak
-        price_change_pct = (price_change / start_peak * 100) if start_peak != 0 else 0
-        
-        # Format the representation
-        return (f"ChanLine({self.direction.name} {direction_arrow} "
-                f"Start: {start_time_str} @{start_peak:.2f} → "
-                f"End: {end_time_str} @{end_peak:.2f} "
-                f"[Δ{price_change:+.2f} ({price_change_pct:+.1f}%)] "
-                f"Pens:{self.pen_count} Status:{self.status.name})")
-
-
-def create_line_from_pen(pen: ChanPen) -> Optional[ChanLine]:
-    """
-    Create a line from a single pen
-    
-    This helper function creates a line from a single pen by treating it as both
-    the start and end pen. This is used in special cases where the first
-    pen should be treated as a line.
-    
-    Args:
-        pen: The pen to create a line from
-        
-    Returns:
-        ChanLine object if successful, None otherwise
-    """
-    logger = logging.getLogger(__name__)
-    
-    if not pen or not pen.is_valid:
-        logger.warning("Cannot create line from invalid pen")
-        return None
-    
-    # Create a line with the pen as both start and end
-    line = ChanLine(
-        start_pen=pen,
-        end_pen=pen,
-        pens=[pen],
-        direction=LineDirection.UP if pen.direction == PenDirection.UP else LineDirection.DOWN,
-        status=LineStatus.COMPLETED,
-        break_type=LineBreakType.NONE,
-        is_global=True,  # Mark as global line
-        confirmed=True
-    )
-    
-    logger.info(f"Created line from pen: {line.direction.name} "
-                f"from {line.start_time} to {line.end_time}, length: {line.length:.4f}")
-    
-    return line
 
 
 class LineProcessor:
@@ -238,6 +90,18 @@ class LineProcessor:
             pens=pens.copy(),
             status=LineStatus.COMPLETED,
             confirmed=True
+        )
+        
+        # Record completion in history
+        line.update_status(
+            new_status=LineStatus.COMPLETED,
+            reason=f"Line completed with {len(pens)} pens from {line.start_time} to {line.end_time}",
+            details={
+                'formation_method': 'line_standard',
+                'pen_count': len(pens),
+                'price_range': line.high - line.low,
+                'direction': line.direction.name
+            }
         )
         
         return line
@@ -320,6 +184,20 @@ class LineProcessor:
         if lines and not self.global_line:
             self.global_line = lines[0]
             self.global_line.is_global = True
+            
+            # Record becoming global line in history
+            self.global_line.history.add_entry(
+                event_type='global_line_assigned',
+                reason='First line created becomes global line',
+                details={
+                    'assignment_method': 'first_line',
+                    'total_lines_created': len(lines),
+                    'global_line_direction': self.global_line.direction.name,
+                    'global_line_pen_count': self.global_line.pen_count,
+                    'global_line_length': self.global_line.length
+                }
+            )
+            
             self.logger.info(f"Set global line: {self.global_line.direction.name} "
                            f"from {self.global_line.start_time} to {self.global_line.end_time}")
         
@@ -349,6 +227,14 @@ class LineProcessor:
                 line.break_price = latest_pen.low
                 line.break_pen = latest_pen
                 
+                # Record break attempt
+                line.record_break_attempt(
+                    break_type=LineBreakType.PARTIAL_BREAK,
+                    pen=latest_pen,
+                    price=latest_pen.low,
+                    reason=f"Pen low {latest_pen.low:.4f} below line low {line.low:.4f}"
+                )
+                
                 # Check if it's a confirmed break
                 if len(new_pens) >= self.break_confirmation_pens:
                     # Check if multiple pens confirm the break
@@ -356,15 +242,38 @@ class LineProcessor:
                                      if pen.low < line.low]
                     if len(confirming_pens) >= self.break_confirmation_pens:
                         line.break_type = LineBreakType.CONFIRMED_BREAK
-                        line.status = LineStatus.BROKEN
+                        line.update_status(
+                            new_status=LineStatus.BROKEN,
+                            reason=f"Confirmed break by {len(confirming_pens)} pens below line low",
+                            pen_involved=latest_pen,
+                            price_level=latest_pen.low,
+                            details={
+                                'confirming_pens': len(confirming_pens),
+                                'break_threshold': line.low,
+                                'break_price': latest_pen.low,
+                                'break_magnitude': line.low - latest_pen.low
+                            }
+                        )
                         return LineBreakType.CONFIRMED_BREAK
                 
                 # Determine if it's full or partial break
                 break_threshold = line.low * 0.99  # 1% below
                 if latest_pen.low < break_threshold:
                     line.break_type = LineBreakType.FULL_BREAK
+                    line.record_break_attempt(
+                        break_type=LineBreakType.FULL_BREAK,
+                        pen=latest_pen,
+                        price=latest_pen.low,
+                        reason=f"Full break: pen low {latest_pen.low:.4f} below threshold {break_threshold:.4f}"
+                    )
                 else:
                     line.break_type = LineBreakType.PARTIAL_BREAK
+                    line.record_break_attempt(
+                        break_type=LineBreakType.PARTIAL_BREAK,
+                        pen=latest_pen,
+                        price=latest_pen.low,
+                        reason=f"Partial break: pen low {latest_pen.low:.4f} below line low {line.low:.4f}"
+                    )
                 
                 return line.break_type
         
@@ -374,21 +283,52 @@ class LineProcessor:
                 line.break_price = latest_pen.high
                 line.break_pen = latest_pen
                 
+                # Record break attempt
+                line.record_break_attempt(
+                    break_type=LineBreakType.PARTIAL_BREAK,
+                    pen=latest_pen,
+                    price=latest_pen.high,
+                    reason=f"Pen high {latest_pen.high:.4f} above line high {line.high:.4f}"
+                )
+                
                 # Check if it's a confirmed break
                 if len(new_pens) >= self.break_confirmation_pens:
                     confirming_pens = [pen for pen in new_pens[-self.break_confirmation_pens:] 
                                      if pen.high > line.high]
                     if len(confirming_pens) >= self.break_confirmation_pens:
                         line.break_type = LineBreakType.CONFIRMED_BREAK
-                        line.status = LineStatus.BROKEN
+                        line.update_status(
+                            new_status=LineStatus.BROKEN,
+                            reason=f"Confirmed break by {len(confirming_pens)} pens above line high",
+                            pen_involved=latest_pen,
+                            price_level=latest_pen.high,
+                            details={
+                                'confirming_pens': len(confirming_pens),
+                                'break_threshold': line.high,
+                                'break_price': latest_pen.high,
+                                'break_magnitude': latest_pen.high - line.high
+                            }
+                        )
                         return LineBreakType.CONFIRMED_BREAK
                 
                 # Determine if it's full or partial break
                 break_threshold = line.high * 1.01  # 1% above
                 if latest_pen.high > break_threshold:
                     line.break_type = LineBreakType.FULL_BREAK
+                    line.record_break_attempt(
+                        break_type=LineBreakType.FULL_BREAK,
+                        pen=latest_pen,
+                        price=latest_pen.high,
+                        reason=f"Full break: pen high {latest_pen.high:.4f} above threshold {break_threshold:.4f}"
+                    )
                 else:
                     line.break_type = LineBreakType.PARTIAL_BREAK
+                    line.record_break_attempt(
+                        break_type=LineBreakType.PARTIAL_BREAK,
+                        pen=latest_pen,
+                        price=latest_pen.high,
+                        reason=f"Partial break: pen high {latest_pen.high:.4f} above line high {line.high:.4f}"
+                    )
                 
                 return line.break_type
         
@@ -417,8 +357,22 @@ class LineProcessor:
             if len(new_pens) >= self.min_line_pens:
                 new_line = self.create_line(new_pens[-self.min_line_pens:])
                 if new_line:
+                    # Record the transition
+                    old_global_line = self.global_line
                     self.global_line = new_line
                     self.global_line.is_global = True
+                    
+                    # Add history entry about becoming global
+                    self.global_line.history.add_entry(
+                        event_type='global_line_assigned',
+                        reason=f"Became global line after previous global line was broken",
+                        details={
+                            'previous_global_line_direction': old_global_line.direction.name,
+                            'previous_global_line_break_price': old_global_line.break_price,
+                            'new_global_line_direction': self.global_line.direction.name
+                        }
+                    )
+                    
                     self.logger.info(f"New global line formed: {self.global_line.direction.name}")
     
     def get_upward_lines(self) -> List[ChanLine]:

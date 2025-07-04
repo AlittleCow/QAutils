@@ -1,16 +1,30 @@
 """
-Line Processing Module for Chan Algorithm
+Line module for Chan Algorithm
 
-This module contains classes and functions for processing lines in the Chan algorithm.
+This module provides line processing functionality including:
+- Line formation from pens
+- Line breaking analysis
+- Line history tracking
+- Global line management
 """
 
-from .line import LineProcessor, ChanLine, LineDirection, LineStatus, LineBreakType, create_line_from_pen
+from .linetypes import (
+    LineDirection, LineBreakType, LineStatus, LineHistoryEntry,
+    LineEventType, LineFormationMethod, BreakAnalysisConstants,
+    LineHistory, ChanLine
+)
+from .line import LineProcessor
+from .lineutils import create_line_from_pen
 
 __all__ = [
-    'LineProcessor',
-    'ChanLine', 
-    'LineDirection',
-    'LineStatus',
-    'LineBreakType',
+    # Types and enums
+    'LineDirection', 'LineBreakType', 'LineStatus', 'LineHistoryEntry',
+    'LineEventType', 'LineFormationMethod', 'BreakAnalysisConstants',
+    'LineHistory',
+    
+    # Main classes
+    'ChanLine', 'LineProcessor',
+    
+    # Utility functions
     'create_line_from_pen'
 ] 

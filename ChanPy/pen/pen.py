@@ -21,7 +21,8 @@ from datetime import datetime
 if TYPE_CHECKING:
     from ..chan import Kbar
     from ..context import ChanContext
-    from ..line import ChanLine, LineDirection, LineStatus, LineBreakType, create_line_from_pen
+    from ..line import ChanLine, LineDirection, LineStatus, LineBreakType
+    from ..line.lineutils import create_line_from_pen
 
 
 class PenProcessor:
@@ -783,7 +784,7 @@ class PenProcessor:
             
         Returns:
             True if successful, False otherwise
-        """
+        """        
         # Mark the pen as valid before creating line from it
         if pen:
             pen.is_valid = True
