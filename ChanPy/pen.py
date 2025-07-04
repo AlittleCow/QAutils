@@ -659,6 +659,10 @@ class PenProcessor:
                 for key, value in relationship_result.analysis_details.items():
                     self.logger.debug(f"Analysis detail - {key}: {value}")
                 
+                # Parse analysis details to determine processing strategy
+                parsed_details = self.parse_analysis_details(relationship_result.analysis_details)
+                self.logger.debug(f"Parsed analysis details: {parsed_details}")
+                
                 # Create new pen if relationship analysis suggests it's appropriate
                 if relationship_result.can_merge:
                     new_pen = self.create_pen(pen1.start_fractal, pen3.end_fractal)
@@ -683,32 +687,35 @@ class PenProcessor:
                             'analysis_details': relationship_result.analysis_details
                         }
                         
+                        # Add parsed analysis details
+                        new_pen.validation_details['parsed_analysis'] = parsed_details
+                        
                         new_pens.append(new_pen)
                         self.logger.debug(f"Created new pen from 3 consecutive pens: {new_pen}")
                         self.logger.debug(f"Relationship analysis: {relationship_result.relationship.value} - {relationship_result.merge_recommendation}")
                 else:
                     self.logger.debug(f"Skipping pen creation - relationship analysis suggests not to merge: {relationship_result.merge_recommendation}")
+                    
+                    # Handle special cases based on parsed analysis details
+                    if parsed_details['case_type'] == "treat_first_pen_as_line":
+                        self.logger.debug("Special case: treating first pen as line - need to handle pen processing differently")
+                        # TODO: Implement special processing for "treat_first_pen_as_line" case
+                        # This would involve using pen1 as a line and processing next two pens differently
+                        
+                    elif parsed_details['case_type'] == "bypass_first_pen":
+                        self.logger.debug("Special case: bypassing first pen - need to shift processing window")
+                        # TODO: Implement special processing for "bypass_first_pen" case
+                        # This would involve skipping pen1 and using pen2 as the starting point
+            
+                # please check the result analysis_details
+                # if there is a case_type = "treat_first_pen_as_line", then we should use pen1 as the first line
+                # and move to the next two pens to create a new pen
+                # otherwise, we should use pen2 as the first line and move to the next two pens to create a new pen
+                # NOTE: This logic is now handled by the parse_analysis_details function above
+                
             else:
                 self.logger.error("Pen relationship handler not available, using fallback logic")
                 raise ValueError("Pen relationship handler not available")
-
-            # # Create new pen from pen1's start to pen3's end
-            # new_pen = self.create_pen(pen1.start_fractal, pen3.end_fractal)
-            
-            # if new_pen:
-            #     # Add information about the source pens and their relationship
-            #     new_pen.validation_details = new_pen.validation_details or {}
-            #     new_pen.validation_details['source_pens'] = [
-            #         f"Pen1({pen1.start_time}-{pen1.end_time})",
-            #         f"Pen2({pen2.start_time}-{pen2.end_time})",
-            #         f"Pen3({pen3.start_time}-{pen3.end_time})"
-            #     ]
-            #     new_pen.validation_details['three_pen_relationship'] = pen_relationship.value
-            #     new_pen.validation_details['three_pen_relationship_description'] = pen_relationship.get_description()
-                
-            #     new_pens.append(new_pen)
-            #     self.logger.debug(f"Created new pen from 3 consecutive pens: {new_pen}")
-            #     self.logger.debug(f"Three pen relationship: {pen_relationship.value} - {pen_relationship.get_description()}")
         
         # Handle remaining pens (if pen_list length is not divisible by 3)
         remaining_start = len(pen_list) - (len(pen_list) % 3)
@@ -755,3 +762,82 @@ class PenProcessor:
         self.logger.debug(f"  Relationship: {relationship.value} - {relationship.get_description()}")
         
         return relationship 
+    
+    def parse_analysis_details(self, analysis_details: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Parse analysis details from pen relationship analysis
+        
+        This function interprets the analysis_details from the relationship handler
+        and provides instructions on how to handle the three consecutive pens.
+        
+        Args:
+            analysis_details: Dictionary containing analysis details from relationship handler
+            
+        Returns:
+            Dictionary with parsed instructions containing:
+            - 'case_type': The type of case identified
+            - 'action': The action to take
+            - 'first_pen_treatment': How to treat the first pen ('use' or 'bypass')
+            - 'next_pens_pattern': The pattern for next pens
+            - 'recommendation': Human-readable recommendation
+        """
+        parsed_result = {
+            'case_type': 'unknown',
+            'action': 'default',
+            'first_pen_treatment': 'use',
+            'next_pens_pattern': 'sequential',
+            'recommendation': 'Use default sequential processing'
+        }
+        
+        if not analysis_details:
+            return parsed_result
+            
+        case_type = analysis_details.get('case_type', 'unknown')
+        parsed_result['case_type'] = case_type
+        
+        if case_type == "treat_first_pen_as_line":
+            # First 4 cases: treat first pen as valid line
+            parsed_result.update({
+                'action': 'treat_pen1_as_first_line',
+                'first_pen_treatment': 'use',
+                'next_pens_pattern': 'pen1_as_line_then_p2_p3',
+                'recommendation': 'Use pen1 as the first line and move to next two pens (p2-p3) to create new pen'
+            })
+            
+        elif case_type == "bypass_first_pen":
+            # Rest 3 cases: bypass first pen
+            parsed_result.update({
+                'action': 'bypass_pen1_use_p2_p3_p4',
+                'first_pen_treatment': 'bypass',
+                'next_pens_pattern': 'p2_p3_p4',
+                'recommendation': 'Bypass pen1 and use pen2 as the first line, move to next two pens (p3-p4) to create new pen'
+            })
+            
+        elif case_type == "all_valid":
+            # All pens are valid, use normal processing
+            parsed_result.update({
+                'action': 'use_all_pens',
+                'first_pen_treatment': 'use',
+                'next_pens_pattern': 'p2_p3_p4',
+                'recommendation': 'All pens are valid, use normal processing with p2-p3-p4 pattern'
+            })
+            
+        elif case_type == "fallback":
+            # Fallback case for unexpected patterns
+            parsed_result.update({
+                'action': 'fallback',
+                'first_pen_treatment': 'use',
+                'next_pens_pattern': 'sequential',
+                'recommendation': 'Unexpected pattern detected, use fallback sequential processing'
+            })
+            
+        # Add additional information from analysis_details
+        if 'case_name' in analysis_details:
+            parsed_result['case_name'] = analysis_details['case_name']
+        if 'next_pens' in analysis_details:
+            parsed_result['next_pens'] = analysis_details['next_pens']
+        if 'error' in analysis_details:
+            parsed_result['error'] = analysis_details['error']
+            
+        self.logger.debug(f"Parsed analysis details: {parsed_result}")
+        return parsed_result 
