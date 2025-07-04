@@ -428,6 +428,154 @@ class ChanContext:
         
         self.logger.debug(f"Updated {len(lines)} lines for {symbol}.{exchange} ({period})")
     
+    def add_line_incrementally(self, new_line: ChanLine, symbol: Optional[str] = None,
+                              exchange: Optional[str] = None, period: Optional[str] = None,
+                              save_to_db: bool = True) -> bool:
+        """
+        Add a new line incrementally if it connects properly to the last existing line.
+        
+        This method checks if the new line's start fractal matches the last line's end fractal,
+        and if so, adds it to the existing lines. This is more efficient than updating all lines.
+        
+        Args:
+            new_line: The new ChanLine to add
+            symbol: Stock symbol (uses current if None)
+            exchange: Exchange code (uses current if None)
+            period: Time period (uses current if None)
+            save_to_db: Whether to save the updated lines to database
+            
+        Returns:
+            True if the line was added successfully, False if it doesn't connect properly
+        """
+        symbol = symbol or self.current_symbol
+        exchange = exchange or self.current_exchange
+        period = period or self.current_period
+        
+        if not all([symbol, exchange, period]):
+            raise ValueError("Symbol, exchange, and period must be specified")
+        
+        # Type guard: we know these are not None after the check above
+        assert symbol is not None
+        assert exchange is not None
+        assert period is not None
+        
+        state = self.get_state(symbol, exchange, period)
+        
+        # Check if we have existing lines
+        if not state.current_lines:
+            # No existing lines, add this as the first line
+            state.current_lines = [new_line]
+            state.latest_line = new_line
+            
+            # Update global line if this is marked as global
+            if new_line.is_global:
+                state.global_line = new_line
+            
+            state.update_timestamp()
+            
+            # Save to database if requested
+            if save_to_db and self.db_manager and hasattr(self.db_manager, 'store_chan_lines'):
+                try:
+                    self.db_manager.store_chan_lines([new_line], symbol, exchange, period)
+                    self.logger.info(f"Saved new Chan line to database for {symbol}.{exchange} ({period})")
+                except Exception as e:
+                    self.logger.error(f"Failed to save new Chan line to database: {str(e)}")
+            
+            self.logger.debug(f"Added first line for {symbol}.{exchange} ({period})")
+            return True
+        
+        # Check if the new line connects to the last existing line
+        last_line = state.current_lines[-1]
+        
+        # Check if new line's start fractal matches last line's end fractal
+        if (new_line.start_pen.start_fractal.timestamp == last_line.end_pen.end_fractal.timestamp and
+            new_line.start_pen.start_fractal.price == last_line.end_pen.end_fractal.price):
+            
+            # Lines connect properly, add the new line
+            state.current_lines.append(new_line)
+            state.latest_line = new_line
+            
+            # Update global line if this is marked as global
+            if new_line.is_global:
+                state.global_line = new_line
+            
+            state.update_timestamp()
+            
+            # Save only the new line to database if requested
+            if save_to_db and self.db_manager and hasattr(self.db_manager, 'store_chan_lines'):
+                try:
+                    self.db_manager.store_chan_lines([new_line], symbol, exchange, period)
+                    self.logger.info(f"Saved incremental Chan line to database for {symbol}.{exchange} ({period})")
+                except Exception as e:
+                    self.logger.error(f"Failed to save incremental Chan line to database: {str(e)}")
+            
+            self.logger.debug(f"Added incremental line for {symbol}.{exchange} ({period}), total lines: {len(state.current_lines)}")
+            return True
+        
+        else:
+            # Lines don't connect properly
+            self.logger.warning(f"New line doesn't connect to last line for {symbol}.{exchange} ({period})")
+            self.logger.debug(f"Last line end: {last_line.end_pen.end_fractal.timestamp} @ {last_line.end_pen.end_fractal.price}")
+            self.logger.debug(f"New line start: {new_line.start_pen.start_fractal.timestamp} @ {new_line.start_pen.start_fractal.price}")
+            return False
+    
+    def add_line_as_global_line_incrementally(self, new_line: ChanLine, symbol: Optional[str] = None,
+                                             exchange: Optional[str] = None, period: Optional[str] = None,
+                                             save_to_db: bool = True) -> bool:
+        """
+        Add a new line as the first global line, inserting it at the beginning of the lines list.
+        
+        This method is used when a line needs to be added as the first/global line,
+        typically when treating a pen as a line in special cases.
+        
+        Args:
+            new_line: The new ChanLine to add as global line
+            symbol: Stock symbol (uses current if None)
+            exchange: Exchange code (uses current if None)
+            period: Time period (uses current if None)
+            save_to_db: Whether to save the updated lines to database
+            
+        Returns:
+            True if the line was added successfully
+        """
+        symbol = symbol or self.current_symbol
+        exchange = exchange or self.current_exchange
+        period = period or self.current_period
+        
+        if not all([symbol, exchange, period]):
+            raise ValueError("Symbol, exchange, and period must be specified")
+        
+        # Type guard: we know these are not None after the check above
+        assert symbol is not None
+        assert exchange is not None
+        assert period is not None
+        
+        state = self.get_state(symbol, exchange, period)
+        
+        # Mark the new line as global
+        new_line.is_global = True
+        
+        # Add the new line at the beginning of the lines list
+        state.current_lines.insert(0, new_line)
+        state.global_line = new_line
+        
+        # Update latest line if this is the only line
+        if len(state.current_lines) == 1:
+            state.latest_line = new_line
+        
+        state.update_timestamp()
+        
+        # Save to database if requested - save all lines since we modified the order
+        if save_to_db and self.db_manager and hasattr(self.db_manager, 'store_chan_lines'):
+            try:
+                self.db_manager.store_chan_lines(state.current_lines, symbol, exchange, period)
+                self.logger.info(f"Saved updated Chan lines with new global line to database for {symbol}.{exchange} ({period})")
+            except Exception as e:
+                self.logger.error(f"Failed to save updated Chan lines to database: {str(e)}")
+        
+        self.logger.debug(f"Added global line at beginning for {symbol}.{exchange} ({period}), total lines: {len(state.current_lines)}")
+        return True
+    
     def get_latest_kbar(self, symbol: Optional[str] = None, exchange: Optional[str] = None,
                        period: Optional[str] = None) -> Optional['Kbar']:
         """Get the latest K-bar."""

@@ -43,7 +43,7 @@ class ChanLine:
     direction: LineDirection = LineDirection.UP
     high: float = 0.0
     low: float = 0.0
-    length: float = 0.0
+    length: float = 0.0 # 线段幅度
     status: LineStatus = LineStatus.FORMING
     break_type: LineBreakType = LineBreakType.NONE
     break_price: Optional[float] = None

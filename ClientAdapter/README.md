@@ -44,6 +44,14 @@ ITdxFunction (abstract interface)
    - Visual Studio 2017 or higher (Windows)
    - C++17 compatible compiler
 
+
+# use vcpkg on windows to install 3rd party libs
+git clone https://github.com/microsoft/vcpkg.git
+
+ .\vcpkg install nlohmann-json:x86-windows
+ .\vcpkg.exe install zeromq:x86-windows
+ .\vcpkg.exe install cppzmq:x86-windows
+
 2. **Build Steps**:
    ```bash
    mkdir build

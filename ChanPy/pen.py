@@ -869,6 +869,7 @@ class PenProcessor:
         self.logger.debug(f"Parsed analysis details: {parsed_result}")
         return parsed_result 
     
+    # FixMe: Should this function be in the line.py file?
     def create_line_from_pen(self, pen: ChanPen) -> Optional['ChanLine']:
         """
         Create a line from a single pen using Chan context
@@ -922,29 +923,19 @@ class PenProcessor:
             return False
         
         try:
-            # Get current lines from context
-            current_lines = []
-            if self.context.current_symbol and self.context.current_exchange and self.context.current_period:
-                state = self.context.get_state(
-                    self.context.current_symbol, 
-                    self.context.current_exchange, 
-                    self.context.current_period
-                )
-                current_lines = state.current_lines.copy()
-            
-            # Add the new line as the first global line
-            new_lines = [line] + current_lines
-            
-            # Update context with new lines
-            self.context.update_lines(
-                new_lines,
+            # Use the new incremental update method for adding global lines
+            success = self.context.add_line_as_global_line_incrementally(
+                line,
                 save_to_db=True  # Save to database
             )
             
-            self.logger.info(f"Added global line to context: {line.direction.name} "
-                           f"from {line.start_time} to {line.end_time}")
-            
-            return True
+            if success:
+                self.logger.info(f"Added global line to context: {line.direction.name} "
+                               f"from {line.start_time} to {line.end_time}")
+                return True
+            else:
+                self.logger.error("Failed to add global line to context")
+                return False
             
         except Exception as e:
             self.logger.error(f"Failed to add global line to context: {str(e)}")
@@ -963,6 +954,12 @@ class PenProcessor:
         Returns:
             True if successful, False otherwise
         """
+        # Mark the pen as valid before creating line from it
+        if pen:
+            pen.is_valid = True
+        else:
+            raise ValueError("Cannot create line from invalid pen")
+        
         line = self.create_line_from_pen(pen)
         if line:
             return self.add_line_as_global_line(line)
