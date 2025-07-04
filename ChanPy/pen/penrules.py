@@ -20,12 +20,13 @@ from typing import List, Optional, Dict, Any, Tuple, TYPE_CHECKING
 from dataclasses import dataclass
 from enum import Enum
 from abc import ABC, abstractmethod
-from ..fractal import Fractal, FractalType
+from ..fractal import Fractal, FractalType, get_kbars_between_fractals
 from ..chantypes import KBarRelationship
 from .pentypes import ChanPen, PenDirection, PenBreakType
 
 if TYPE_CHECKING:
     from ..chan import Kbar
+    from ..context import ChanContext
 
 
 class PenValidationResult(Enum):
@@ -243,6 +244,8 @@ class PenRuleValidator:
         """
         self.logger = logging.getLogger(f"{__name__}.PenRuleValidator")
         self.config = config or PenValidationConfig()
+        self.raw_kbars: List['Kbar'] = []
+        self.context: Optional['ChanContext'] = None
         
         # Initialize all validation rules
         self.rules: List[PenRule] = [
@@ -256,6 +259,111 @@ class PenRuleValidator:
         ]
         
         self.logger.info(f"Initialized PenRuleValidator with {len(self.rules)} rules")
+    
+    def set_raw_kbars(self, kbars: List['Kbar']):
+        """
+        Set the raw kbar data for pen validation
+        
+        Args:
+            kbars: List of raw kbars in chronological order
+        """
+        self.raw_kbars = kbars
+        self.logger.debug(f"Set {len(kbars)} raw kbars for pen validation")
+    
+    def set_context(self, context: 'ChanContext'):
+        """
+        Set the ChanContext for the pen validator
+        
+        Args:
+            context: ChanContext instance
+        """
+        self.context = context
+        self.logger.debug("ChanContext set for pen validator")
+    
+    def validate_pen_with_raw_kbars(self, start_fractal: Fractal, end_fractal: Fractal) -> bool:
+        """
+        Validate a potential pen using raw kbar data
+        
+        Args:
+            start_fractal: Starting fractal
+            end_fractal: Ending fractal
+            
+        Returns:
+            True if pen is valid according to raw kbar analysis
+        """
+        if not self.raw_kbars:
+            self.logger.warning("No raw kbars available for pen validation")
+            return True  # Allow pen if no raw data available
+        
+        # Find raw kbars between the two fractals
+        pen_kbars = get_kbars_between_fractals(start_fractal, end_fractal, self.context)
+        
+        if len(pen_kbars) < self.config.min_kbar_count:
+            return False
+        
+        # Validate pen direction consistency
+        if start_fractal.fractal_type == FractalType.BOTTOM:
+            # Should be an upward pen
+            return self._validate_upward_pen(start_fractal, end_fractal, pen_kbars)
+        else:
+            # Should be a downward pen
+            return self._validate_downward_pen(start_fractal, end_fractal, pen_kbars)
+    
+    def _validate_upward_pen(self, start_fractal: Fractal, end_fractal: Fractal, 
+                           pen_kbars: List['Kbar']) -> bool:
+        """
+        Validate an upward pen against raw kbars
+        
+        Args:
+            start_fractal: Bottom fractal (start)
+            end_fractal: Top fractal (end)
+            pen_kbars: Raw kbars in the pen
+            
+        Returns:
+            True if pen is valid
+        """
+        if not pen_kbars:
+            return False
+        
+        # Check that the pen maintains upward trend
+        # No kbar low should break below the start fractal low
+        start_low = start_fractal.price
+        
+        for kbar in pen_kbars:
+            if kbar.low < start_low:
+                return False
+        
+        # Check that we reach the end fractal high
+        max_high = max(kbar.high for kbar in pen_kbars)
+        return abs(max_high - end_fractal.price) < 0.001  # Allow small tolerance
+    
+    def _validate_downward_pen(self, start_fractal: Fractal, end_fractal: Fractal,
+                             pen_kbars: List['Kbar']) -> bool:
+        """
+        Validate a downward pen against raw kbars
+        
+        Args:
+            start_fractal: Top fractal (start)
+            end_fractal: Bottom fractal (end)
+            pen_kbars: Raw kbars in the pen
+            
+        Returns:
+            True if pen is valid
+        """
+        if not pen_kbars:
+            return False
+        
+        # Check that the pen maintains downward trend
+        # No kbar high should break above the start fractal high
+        start_high = start_fractal.price
+        
+        for kbar in pen_kbars:
+            if kbar.high > start_high:
+                return False
+        
+        # Check that we reach the end fractal low
+        min_low = min(kbar.low for kbar in pen_kbars)
+        return abs(min_low - end_fractal.price) < 0.001  # Allow small tolerance
     
     def validate_pen(self, start_fractal: Fractal, end_fractal: Fractal, 
                     pen_kbars: List['Kbar']) -> Tuple[bool, List[PenValidationResult], Dict[str, Any]]:
