@@ -16,6 +16,7 @@ from ..chantypes import KBarRelationship
 from .pentypes import ChanPen, PenDirection, PenBreakType
 from .penrelationship import PenRelationshipHandler, get_three_pens_relationship
 from .penrules import PenRuleValidator
+from .penutils import create_pen
 from ..line.lineutils import create_line_from_pen
 from datetime import datetime
 
@@ -85,64 +86,33 @@ class PenProcessor:
         if self.pen_validator:
             self.pen_validator.set_raw_kbars(kbars)
     
-    def create_pen(self, start_fractal: Fractal, end_fractal: Fractal) -> Optional[ChanPen]:
+    def validate_pen(self, pen: ChanPen) -> Tuple[bool, List[str], Dict[str, Any]]:
         """
-        Create a pen from two fractals
+        Validate a pen using configured validation rules
         
         Args:
-            start_fractal: Starting fractal
-            end_fractal: Ending fractal
+            pen: The pen to validate
             
         Returns:
-            ChanPen object with validation results stored
+            Tuple of (is_valid, failed_rules, validation_details)
         """
-        # Validate fractal types are different
-        if start_fractal.fractal_type == end_fractal.fractal_type:
-            return None
-        
-        # Determine pen direction
-        if start_fractal.fractal_type == FractalType.BOTTOM:
-            direction = PenDirection.UP
-        else:
-            direction = PenDirection.DOWN
-        
-        # Get raw kbars for this pen
-        pen_kbars = get_kbars_between_fractals(start_fractal, end_fractal, self.context)
-        
-        # Calculate pen length
-        length = abs(end_fractal.price - start_fractal.price)
-        
-        # Create pen with basic validation
-        pen = ChanPen(
-            start_fractal=start_fractal,
-            end_fractal=end_fractal,
-            direction=direction,
-            high=0.0,  # Will be calculated in __post_init__
-            low=0.0,   # Will be calculated in __post_init__
-            length=length,
-            raw_kbars=pen_kbars,
-            confirmed=False,  # Will be set based on validation
-            merged_kbars=[]  # Initialize as empty list - to be populated later
-        )
-        
-        # Perform validation and store results
         is_valid = True
         failed_rules = []
         validation_details = {}
         
         # Basic validation checks
-        if length < self.min_pen_length:
+        if pen.length < self.min_pen_length:
             is_valid = False
             failed_rules.append("min_pen_length")
         
-        if len(pen_kbars) < self.min_kbar_count:
+        if len(pen.raw_kbars) < self.min_kbar_count:
             is_valid = False
             failed_rules.append("min_kbar_count")
         
         # Validate with raw kbars using pen validator if available
         if self.pen_validator:
             # Use pen validator's raw kbar validation method
-            if not self.pen_validator.validate_pen_with_raw_kbars(start_fractal, end_fractal, pen_kbars):
+            if not self.pen_validator.validate_pen_with_raw_kbars(pen.start_fractal, pen.end_fractal, pen.raw_kbars):
                 is_valid = False
                 failed_rules.append("raw_kbar_validation")
         else:
@@ -152,7 +122,7 @@ class PenProcessor:
         # Advanced pen validation using pen rules (if validator is provided)
         if self.pen_validator:
             rule_valid, rule_failed_rules, rule_validation_details = self.pen_validator.validate_pen(
-                start_fractal, end_fractal, pen_kbars
+                pen.start_fractal, pen.end_fractal, pen.raw_kbars
             )
             
             if not rule_valid:
@@ -165,6 +135,28 @@ class PenProcessor:
                 is_valid = True
                 validation_details.update(rule_validation_details)
                 self.logger.info(f"Pen validation passed: {rule_validation_details.get('passed_rules', 0)}/{rule_validation_details.get('total_rules', 0)} rules")
+        
+        return is_valid, failed_rules, validation_details
+    
+    def create_validate_pen(self, start_fractal: Fractal, end_fractal: Fractal) -> Optional[ChanPen]:
+        """
+        Create a pen from two fractals with validation
+        
+        Args:
+            start_fractal: Starting fractal
+            end_fractal: Ending fractal
+            
+        Returns:
+            ChanPen object with validation results stored
+        """
+        # Create pen using utility function
+        pen = create_pen(start_fractal, end_fractal, self.context)
+        
+        if pen is None:
+            return None
+        
+        # Validate the pen
+        is_valid, failed_rules, validation_details = self.validate_pen(pen)
         
         # Store validation results in pen
         pen.is_valid = is_valid
@@ -198,7 +190,7 @@ class PenProcessor:
             start_fractal = fractals[i]
             end_fractal = fractals[i + 1]
             self.logger.debug(f"🖊️ Creating pen from {start_fractal} to {end_fractal} -->>>")
-            pen = self.create_pen(start_fractal, end_fractal)
+            pen = self.create_validate_pen(start_fractal, end_fractal)
             if pen:
                 initial_pens.append(pen)
                 self.logger.debug(f"Initial pen: {pen} - Valid: {pen.is_valid}")
@@ -489,7 +481,7 @@ class PenProcessor:
                 
                 # Create new pen if relationship analysis suggests it's appropriate
                 if relationship_result.can_merge:
-                    new_pen = self.create_pen(pen1.start_fractal, pen3.end_fractal)
+                    new_pen = self.create_validate_pen(pen1.start_fractal, pen3.end_fractal)
                     
                     if new_pen:
                         # Add information about the source pens and their relationship
