@@ -10,7 +10,7 @@ import logging
 from typing import List, Optional, Tuple
 from dataclasses import dataclass
 from enum import Enum
-from .mergekbar import MergedKbar
+from ..mergekbar import MergedKbar
 
 
 class FractalType(Enum):

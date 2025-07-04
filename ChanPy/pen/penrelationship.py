@@ -11,6 +11,7 @@ from typing import List, Optional, Tuple, Dict, Any, TYPE_CHECKING, Callable
 from dataclasses import dataclass
 from enum import Enum
 from ..chantypes import KBarRelationship
+from ..fractal import Fractal
 
 if TYPE_CHECKING:
     from .pen import ChanPen

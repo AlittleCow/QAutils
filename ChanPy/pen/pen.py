@@ -10,7 +10,7 @@ import logging
 from typing import List, Optional, Tuple, Dict, Any, TYPE_CHECKING
 from dataclasses import dataclass
 from enum import Enum
-from ..fractal import Fractal, FractalType
+from ..fractal import Fractal, FractalType, get_kbars_between_fractals
 from ..mergekbar import MergedKbar
 from ..chantypes import KBarRelationship
 from .pentypes import ChanPen, PenDirection, PenBreakType
@@ -92,7 +92,7 @@ class PenProcessor:
             return True  # Allow pen if no raw data available
         
         # Find raw kbars between the two fractals
-        pen_kbars = self._get_kbars_between_fractals(start_fractal, end_fractal)
+        pen_kbars = get_kbars_between_fractals(start_fractal, end_fractal, self.context)
         
         if len(pen_kbars) < self.min_kbar_count:
             return False
@@ -104,30 +104,6 @@ class PenProcessor:
         else:
             # Should be a downward pen
             return self._validate_downward_pen(start_fractal, end_fractal, pen_kbars)
-    
-    def _get_kbars_between_fractals(self, start_fractal: Fractal, end_fractal: Fractal) -> List['Kbar']:
-        """
-        Get raw kbars between two fractals
-        
-        Args:
-            start_fractal: Starting fractal
-            end_fractal: Ending fractal
-            
-        Returns:
-            List of kbars between the fractals
-        """
-        # This is a simplified implementation
-        # In practice, you would need to match fractals to kbar timestamps
-        start_time = start_fractal.timestamp
-        end_time = end_fractal.timestamp
-        
-        # Find kbars within the time range
-        pen_kbars = []
-        for kbar in self.raw_kbars:
-            if start_time <= kbar.timestamp <= end_time:
-                pen_kbars.append(kbar)
-        
-        return pen_kbars
     
     def _validate_upward_pen(self, start_fractal: Fractal, end_fractal: Fractal, 
                            pen_kbars: List['Kbar']) -> bool:
@@ -207,7 +183,7 @@ class PenProcessor:
             direction = PenDirection.DOWN
         
         # Get raw kbars for this pen
-        pen_kbars = self._get_kbars_between_fractals(start_fractal, end_fractal)
+        pen_kbars = get_kbars_between_fractals(start_fractal, end_fractal, self.context)
         
         # Calculate pen length
         length = abs(end_fractal.price - start_fractal.price)
