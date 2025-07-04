@@ -14,7 +14,7 @@ from ..fractal import Fractal, FractalType, get_kbars_between_fractals
 from ..mergekbar import MergedKbar
 from ..chantypes import KBarRelationship
 from .pentypes import ChanPen, PenDirection, PenBreakType
-from .penrelationship import PenRelationshipHandler, get_three_pens_relationship
+from .penrelationship import PenRelationshipHandler, PenDispatchResult, get_three_pens_relationship
 from .penrules import PenRuleValidator
 from .penutils import create_pen
 from ..line.lineutils import create_line_from_pen
@@ -53,8 +53,9 @@ class PenProcessor:
         self.context = context
         self.pens: List[ChanPen] = []
         self.raw_kbars: List['Kbar'] = []
-        self.pen_relationship_handler: Optional[PenRelationshipHandler] = PenRelationshipHandler(context=context)
-    
+        self.pen_relationship_handler: Optional[PenRelationshipHandler] = PenRelationshipHandler(
+            context=context, pen_processor=self)
+
     def set_context(self, context: 'ChanContext'):
         """
         Set the ChanContext for the pen processor
@@ -65,6 +66,7 @@ class PenProcessor:
         self.context = context
         if self.pen_relationship_handler:
             self.pen_relationship_handler.set_context(context)
+            self.pen_relationship_handler.set_pen_processor(self)
         
         # Also set context for pen validator if it exists
         if self.pen_validator:
@@ -461,99 +463,36 @@ class PenProcessor:
                 relationship_result = self.pen_relationship_handler.analyze_pen_relationship(
                     pen1, pen2, pen3, pen_relationship
                 )
-                
-                self.logger.debug(f"Pen relationship analysis: {relationship_result.relationship.value}")
-                self.logger.debug(f"Can merge: {relationship_result.can_merge}")
-                self.logger.debug(f"Merge recommendation: {relationship_result.merge_recommendation}")
-                self.logger.debug(f"Confidence score: {relationship_result.confidence_score}")
-                
-                # Log special considerations
-                for consideration in relationship_result.special_considerations:
-                    self.logger.debug(f"Special consideration: {consideration}")
-                
-                # Log analysis details
-                for key, value in relationship_result.analysis_details.items():
-                    self.logger.debug(f"Analysis detail - {key}: {value}")
-                
-                # Parse analysis details to determine processing strategy
-                parsed_details = self.handle_analysis_details(relationship_result.analysis_details)
-                self.logger.debug(f"Parsed analysis details: {parsed_details}")
-                
-                # Create new pen if relationship analysis suggests it's appropriate
-                if relationship_result.can_merge:
-                    new_pen = self.create_validate_pen(pen1.start_fractal, pen3.end_fractal)
+
+                # Dispatch the relationship processing using the new dispatch method
+                dispatch_result = self.pen_relationship_handler.dispatch_pen_relationship(
+                    pen1, pen2, pen3, 
+                    relationship_result, 
+                    pen_relationship,
+                    pen_list,
+                    i
+                )
+
+                # Handle the dispatch result
+                if dispatch_result.success:
+                    # Add new pens from the dispatch result
+                    new_pens.extend(dispatch_result.new_pens)
                     
-                    if new_pen:
-                        # Add information about the source pens and their relationship
-                        new_pen.validation_details = new_pen.validation_details or {}
-                        new_pen.validation_details['source_pens'] = [
-                            f"Pen1({pen1.start_time}-{pen1.end_time})",
-                            f"Pen2({pen2.start_time}-{pen2.end_time})",
-                            f"Pen3({pen3.start_time}-{pen3.end_time})"
-                        ]
-                        new_pen.validation_details['three_pen_relationship'] = pen_relationship.value
-                        new_pen.validation_details['three_pen_relationship_description'] = pen_relationship.get_description()
+                    # Add pens to continue processing
+                    new_pens.extend(dispatch_result.pens_to_continue)
+                    
+                    self.logger.debug(f"Dispatch successful: {dispatch_result.action}")
+                    self.logger.debug(f"Added {len(dispatch_result.new_pens)} new pens")
+                    self.logger.debug(f"Added {len(dispatch_result.pens_to_continue)} pens to continue")
+                    
+                    if dispatch_result.global_line_created:
+                        self.logger.info("Global line created during dispatch")
                         
-                        # Add relationship analysis results
-                        new_pen.validation_details['relationship_analysis'] = {
-                            'can_merge': relationship_result.can_merge,
-                            'merge_recommendation': relationship_result.merge_recommendation,
-                            'confidence_score': relationship_result.confidence_score,
-                            'special_considerations': relationship_result.special_considerations,
-                            'analysis_details': relationship_result.analysis_details
-                        }
-                        
-                        # Add parsed analysis details
-                        new_pen.validation_details['parsed_analysis'] = parsed_details
-                        
-                        new_pens.append(new_pen)
-                        self.logger.debug(f"Created new pen from 3 consecutive pens: {new_pen}")
-                        self.logger.debug(f"Relationship analysis: {relationship_result.relationship.value} - {relationship_result.merge_recommendation}")
                 else:
-                    self.logger.debug(f"Skipping pen creation - relationship analysis suggests not to merge: {relationship_result.merge_recommendation}")
-                    
-                    # Handle special cases based on parsed analysis details
-                    if parsed_details['case_type'] == "treat_first_pen_as_line":
-                        self.logger.info("Special case: treating first pen as line - creating global line from pen1")
-                        # Create and add global line from the first pen
-                        success = self.create_and_add_global_line_from_pen(pen1)
-                        if success:
-                            self.logger.info("Successfully created and added global line from first pen")
-                            # Add pen1 as a line-equivalent pen to the results
-                            # Mark pen1 with special status to indicate it's been converted to a line
-                            pen1.validation_details = pen1.validation_details or {}
-                            pen1.validation_details['converted_to_global_line'] = True
-                            pen1.validation_details['conversion_timestamp'] = datetime.now().isoformat()
-                            new_pens.append(pen1)
-                        else:
-                            self.logger.error("Failed to create and add global line from first pen")
-                        
-                        # Continue processing with pen2 and pen3 if available
-                        if len(pen_list) > i + 2:
-                            # Add pen2 and pen3 to continue processing
-                            new_pens.extend([pen2, pen3])
-                            
-                    elif parsed_details['case_type'] == "bypass_first_pen":
-                        self.logger.info("Special case: bypassing first pen - need to shift processing window")
-                        # Add pen2 and pen3 to continue processing, skip pen1
-                        new_pens.extend([pen2, pen3])
-                        
-                    elif parsed_details['case_type'] == "all_valid":
-                        self.logger.info("All pens are valid - adding all three pens")
-                        # Add all three pens
-                        new_pens.extend([pen1, pen2, pen3])
-                        
-                    else:
-                        self.logger.warning(f"Unknown case type: {parsed_details['case_type']} - using fallback")
-                        # Fallback: add all pens
-                        new_pens.extend([pen1, pen2, pen3])
+                    self.logger.error(f"Dispatch failed: {dispatch_result.error_message}")
+                    # Fallback: add all three pens
+                    new_pens.extend([pen1, pen2, pen3])
             
-                # please check the result analysis_details
-                # if there is a case_type = "treat_first_pen_as_line", then we should use pen1 as the first line
-                # and move to the next two pens to create a new pen
-                # otherwise, we should use pen2 as the first line and move to the next two pens to create a new pen
-                # NOTE: This logic is now handled by the handle_analysis_details function above
-                
             else:
                 self.logger.error("Pen relationship handler not available, using fallback logic")
                 raise ValueError("Pen relationship handler not available")
@@ -567,85 +506,6 @@ class PenProcessor:
         
         self.logger.info(f"Processed {len(pen_list)} pens into {len(new_pens)} new pens")
         return new_pens
-    
-    def handle_analysis_details(self, analysis_details: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Parse analysis details from pen relationship analysis
-        
-        This function interprets the analysis_details from the relationship handler
-        and provides instructions on how to handle the three consecutive pens.
-        
-        Args:
-            analysis_details: Dictionary containing analysis details from relationship handler
-            
-        Returns:
-            Dictionary with parsed instructions containing:
-            - 'case_type': The type of case identified
-            - 'action': The action to take
-            - 'first_pen_treatment': How to treat the first pen ('use' or 'bypass')
-            - 'next_pens_pattern': The pattern for next pens
-            - 'recommendation': Human-readable recommendation
-        """
-        parsed_result = {
-            'case_type': 'unknown',
-            'action': 'default',
-            'first_pen_treatment': 'use',
-            'next_pens_pattern': 'sequential',
-            'recommendation': 'Use default sequential processing'
-        }
-        
-        if not analysis_details:
-            return parsed_result
-            
-        case_type = analysis_details.get('case_type', 'unknown')
-        parsed_result['case_type'] = case_type
-        
-        if case_type == "treat_first_pen_as_line":
-            # First 4 cases: treat first pen as valid line
-            parsed_result.update({
-                'action': 'treat_pen1_as_first_line',
-                'first_pen_treatment': 'use',
-                'next_pens_pattern': 'pen1_as_line_then_p2_p3',
-                'recommendation': 'Use pen1 as the first line and move to next two pens (p2-p3) to create new pen'
-            })
-            
-        elif case_type == "bypass_first_pen":
-            # Rest 3 cases: bypass first pen
-            parsed_result.update({
-                'action': 'bypass_pen1_use_p2_p3_p4',
-                'first_pen_treatment': 'bypass',
-                'next_pens_pattern': 'p2_p3_p4',
-                'recommendation': 'Bypass pen1 and use pen2 as the first line, move to next two pens (p3-p4) to create new pen'
-            })
-            
-        elif case_type == "all_valid":
-            # All pens are valid, use normal processing
-            parsed_result.update({
-                'action': 'use_all_pens',
-                'first_pen_treatment': 'use',
-                'next_pens_pattern': 'p2_p3_p4',
-                'recommendation': 'All pens are valid, use normal processing with p2-p3-p4 pattern'
-            })
-            
-        elif case_type == "fallback":
-            # Fallback case for unexpected patterns
-            parsed_result.update({
-                'action': 'fallback',
-                'first_pen_treatment': 'use',
-                'next_pens_pattern': 'sequential',
-                'recommendation': 'Unexpected pattern detected, use fallback sequential processing'
-            })
-            
-        # Add additional information from analysis_details
-        if 'case_name' in analysis_details:
-            parsed_result['case_name'] = analysis_details['case_name']
-        if 'next_pens' in analysis_details:
-            parsed_result['next_pens'] = analysis_details['next_pens']
-        if 'error' in analysis_details:
-            parsed_result['error'] = analysis_details['error']
-            
-        self.logger.debug(f"Parsed analysis details: {parsed_result}")
-        return parsed_result 
     
     def add_line_as_global_line(self, line: 'ChanLine') -> bool:
         """
