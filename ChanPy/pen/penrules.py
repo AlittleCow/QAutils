@@ -296,7 +296,13 @@ class PenRuleValidator:
             return True  # Allow pen if no raw data available
         
         # Find raw kbars between the two fractals
-        pen_kbars = get_kbars_between_fractals(start_fractal, end_fractal, self.context)
+        pen_kbars = []
+        
+        if self.context:
+            # Use context to get kbars between fractals
+            pen_kbars = get_kbars_between_fractals(start_fractal, end_fractal, self.context)
+        else:
+            raise ValueError("ChanContext not set for pen validation")
         
         if len(pen_kbars) < self.config.min_kbar_count:
             return False

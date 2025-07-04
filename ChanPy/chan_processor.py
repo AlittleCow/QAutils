@@ -78,31 +78,20 @@ class ChanProcessor:
         self.end_time = end_time
         self.kbar_limit = kbar_limit
         
-        # Initialize context management
+        # Initialize context management (but don't set it yet)
         self.context = context if context is not None else ChanContext()
         self.symbol = symbol
         self.exchange = exchange
         self.period = period
         
-        # Set current context if all parameters provided
-        if all([symbol, exchange, period]):
-            # Type guard: we know these are not None after the check above
-            assert symbol is not None
-            assert exchange is not None
-            assert period is not None
-            
-            self.context.set_current_context(symbol, exchange, period)
-            self.logger.info(f"Set Chan context to {symbol}.{exchange} ({period})")
-        
-        # Initialize all processors
-        self.kbar_merger = KbarMerger(context=self.context)
+        # Initialize all processors with only necessary properties (no context)
+        self.kbar_merger = KbarMerger()  # Remove context from constructor
         self.fractal_identifier = FractalIdentifier(strict_mode=strict_fractal_mode)
         self.pen_validator = PenRuleValidator()
         self.pen_processor = PenProcessor(
             min_pen_length=min_pen_length, 
             min_kbar_count=min_kbar_count,
-            pen_validator=self.pen_validator,
-            context=self.context
+            pen_validator=self.pen_validator
         )
         self.line_processor = LineProcessor(min_line_pens=min_line_pens)
         
@@ -113,6 +102,15 @@ class ChanProcessor:
         self.pens: List[ChanPen] = []
         self.lines: List[ChanLine] = []
         
+        # Set context if all parameters provided
+        if all([symbol, exchange, period]):
+            # Type guard: we know these are not None after the check above
+            assert symbol is not None
+            assert exchange is not None
+            assert period is not None
+            
+            self.set_context(symbol, exchange, period)
+        
         # Initialize from database if context is available and auto_load_data is True
         if auto_load_data and all([self.context, symbol, exchange, period]):
             try:
@@ -120,7 +118,6 @@ class ChanProcessor:
                 assert symbol is not None
                 assert exchange is not None
                 assert period is not None
-                self.logger.info("Initialized Chan processor from database context successfully")
                 self.context.initialize_from_database(symbol, exchange, period, 
                                                      limit=kbar_limit, 
                                                      start_time=start_time, 
@@ -1015,7 +1012,7 @@ class ChanProcessor:
 
     def set_context(self, symbol: str, exchange: str, period: str):
         """
-        Set the context for Chan analysis
+        Set the context for Chan analysis and propagate to all processors
         
         Args:
             symbol: Stock symbol
@@ -1030,9 +1027,27 @@ class ChanProcessor:
             self.context.set_current_context(symbol, exchange, period)
             self.logger.info(f"Updated Chan context to {symbol}.{exchange} ({period})")
             
+            # Propagate context to all processors that need it
+            if hasattr(self, 'kbar_merger') and self.kbar_merger:
+                self.kbar_merger.set_context(self.context)
+            
+            if hasattr(self, 'fractal_identifier') and self.fractal_identifier:
+                self.fractal_identifier.set_context(self.context)
+            
+            if hasattr(self, 'pen_validator') and self.pen_validator:
+                self.pen_validator.set_context(self.context)
+            
+            if hasattr(self, 'pen_processor') and self.pen_processor:
+                self.pen_processor.set_context(self.context)
+            
+            if hasattr(self, 'line_processor') and self.line_processor:
+                self.line_processor.set_context(self.context)
+            
             # Try to initialize from database with time range
             try:
-                self.context.initialize_from_database(symbol, exchange, period, start_time=self.start_time, end_time=self.end_time)
+                self.context.initialize_from_database(symbol, exchange, period, 
+                                                     start_time=self.start_time, 
+                                                     end_time=self.end_time)
                 self._load_from_context()
                 self.logger.info("Loaded existing analysis from database context")
             except Exception as e:

@@ -7,10 +7,13 @@ forms either a top or bottom pattern.
 """
 
 import logging
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, TYPE_CHECKING
 from dataclasses import dataclass
 from enum import Enum
 from ..mergekbar import MergedKbar
+
+if TYPE_CHECKING:
+    from ..context import ChanContext
 
 
 class FractalType(Enum):
@@ -78,17 +81,29 @@ class FractalIdentifier:
     A fractal requires three consecutive merged kbars with specific high/low relationships.
     """
     
-    def __init__(self, strict_mode: bool = True):
+    def __init__(self, strict_mode: bool = True, context: Optional['ChanContext'] = None):
         """
         Initialize Fractal Identifier
         
         Args:
             strict_mode: If True, use strict fractal identification rules
+            context: Optional ChanContext for state management
         """
         self.logger = logging.getLogger(f"{__name__}")
         self.strict_mode = strict_mode
+        self.context = context
         self.fractals: List[Fractal] = []
         self.min_fractal_strength = 0.0  # Minimum strength for valid fractal
+    
+    def set_context(self, context: 'ChanContext'):
+        """
+        Set the ChanContext for the fractal identifier
+        
+        Args:
+            context: ChanContext instance
+        """
+        self.context = context
+        self.logger.debug("ChanContext set for fractal identifier")
     
     def is_top_fractal(self, left: MergedKbar, middle: MergedKbar, right: MergedKbar) -> bool:
         """

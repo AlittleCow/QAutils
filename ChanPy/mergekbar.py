@@ -522,6 +522,20 @@ class KbarMerger:
         # Initialize the direction determiner
         self.direction_determiner = ChanMergeKbarDirection(context)
     
+    def set_context(self, context: 'ChanContext'):
+        """
+        Set the ChanContext for the kbar merger
+        
+        Args:
+            context: ChanContext instance
+        """
+        self.context = context
+        # Also update the direction determiner's context
+        if self.direction_determiner:
+            self.direction_determiner.context = context
+        
+        self.logger.debug("ChanContext set for kbar merger")
+    
     def can_merge(self, kbar1: 'Kbar', kbar2: 'Kbar') -> bool:
         """
         Check if two consecutive kbars can be merged

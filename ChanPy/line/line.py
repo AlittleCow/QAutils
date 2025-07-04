@@ -33,20 +33,32 @@ class LineProcessor:
     Handles line breaking analysis and maintains global line state.
     """
     
-    def __init__(self, min_line_pens: int = 3, break_confirmation_pens: int = 2):
+    def __init__(self, min_line_pens: int = 3, break_confirmation_pens: int = 2, context: Optional['ChanContext'] = None):
         """
         Initialize Line Processor
         
         Args:
             min_line_pens: Minimum number of pens required for a valid line
             break_confirmation_pens: Number of pens needed to confirm a line break
+            context: Optional ChanContext for state management
         """
         self.logger = logging.getLogger(f"{__name__}")
         self.min_line_pens = min_line_pens
         self.break_confirmation_pens = break_confirmation_pens
+        self.context = context
         self.lines: List[ChanLine] = []
         self.global_line: Optional[ChanLine] = None
         self.current_forming_line: Optional[ChanLine] = None
+    
+    def set_context(self, context: 'ChanContext'):
+        """
+        Set the ChanContext for the line processor
+        
+        Args:
+            context: ChanContext instance
+        """
+        self.context = context
+        self.logger.debug("ChanContext set for line processor")
     
     def can_form_line(self, pens: List[ChanPen]) -> bool:
         """
