@@ -920,11 +920,5 @@ def get_three_pens_relationship(pen1: 'ChanPen', pen2: 'ChanPen', pen3: 'ChanPen
     
     # Get the relationship using KBarRelationship
     relationship = KBarRelationship.determine_relationship(d1, g1, d2, g2)
-    
-    logger.debug(f"\n\nThree pen relationship analysis:")
-    logger.debug(f"{pen1}")
-    logger.debug(f"{pen2}")
-    logger.debug(f"{pen3}")
     logger.debug(f"  Relationship: {relationship.value} - {relationship.get_description()}")
-    
     return relationship

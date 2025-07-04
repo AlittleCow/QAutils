@@ -456,7 +456,11 @@ class PenProcessor:
             pen1 = pen_list[i]
             pen2 = pen_list[i + 1]
             pen3 = pen_list[i + 2]
-            
+            self.logger.debug(f"🖊️ Processing 3 consecutive pens")
+            self.logger.debug(f"🖊️ Pen 1: {pen1}")
+            self.logger.debug(f"🖊️ Pen 2: {pen2}")
+            self.logger.debug(f"🖊️ Pen 3: {pen3}")
+
             # Analyze the 3 consecutive pens using KBarRelationship
             pen_relationship = get_three_pens_relationship(pen1, pen2, pen3)
             self.logger.debug(f"Three pen relationship: {pen_relationship.value} - {pen_relationship.get_description()}")
