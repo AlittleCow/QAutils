@@ -10,13 +10,13 @@ import logging
 from typing import List, Optional, Tuple, Dict, Any, TYPE_CHECKING, Callable
 from dataclasses import dataclass
 from enum import Enum
-from .chantypes import KBarRelationship
+from ..chantypes import KBarRelationship
 
 if TYPE_CHECKING:
     from .pen import ChanPen
-    from .fractal import Fractal
-    from .chan import Kbar
-    from .context import ChanContext
+    from ..fractal import Fractal
+    from ..chan import Kbar
+    from ..context import ChanContext
 
 
 @dataclass
@@ -887,3 +887,43 @@ class PenRelationshipHandler:
             "handler_coverage": len(self.handlers) / len(KBarRelationship),
             "missing_handlers": [rel.value for rel in KBarRelationship if rel not in self.handlers]
         }
+
+# ==================== Helper Functions ====================
+
+def get_three_pens_relationship(pen1: 'ChanPen', pen2: 'ChanPen', pen3: 'ChanPen') -> KBarRelationship:
+    """
+    Get the KBarRelationship between 3 consecutive pens
+    
+    This function treats:
+    - pen1 as kbar1 (using pen1's low and high)
+    - pen3 as kbar2 (using pen3's low and high)
+    - pen2 is used for context but not directly in the relationship calculation
+    
+    Args:
+        pen1: First pen (treated as kbar1)
+        pen2: Second pen (for context)
+        pen3: Third pen (treated as kbar2)
+        
+    Returns:
+        KBarRelationship: The relationship between pen1 and pen3
+    """
+    logger = logging.getLogger(f"{__name__}.get_three_pens_relationship")
+    
+    # Use pen1's low and high as kbar1 (d1, g1)
+    d1 = pen1.low   # Low of pen1
+    g1 = pen1.high  # High of pen1
+    
+    # Use pen3's low and high as kbar2 (d2, g2)
+    d2 = pen3.low   # Low of pen3
+    g2 = pen3.high  # High of pen3
+    
+    # Get the relationship using KBarRelationship
+    relationship = KBarRelationship.determine_relationship(d1, g1, d2, g2)
+    
+    logger.debug(f"\n\nThree pen relationship analysis:")
+    logger.debug(f"{pen1}")
+    logger.debug(f"{pen2}")
+    logger.debug(f"{pen3}")
+    logger.debug(f"  Relationship: {relationship.value} - {relationship.get_description()}")
+    
+    return relationship

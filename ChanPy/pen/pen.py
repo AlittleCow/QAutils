@@ -10,113 +10,18 @@ import logging
 from typing import List, Optional, Tuple, Dict, Any, TYPE_CHECKING
 from dataclasses import dataclass
 from enum import Enum
-from .fractal import Fractal, FractalType
-from .mergekbar import MergedKbar
-from .chantypes import KBarRelationship
-from .penrelationship import PenRelationshipHandler
+from ..fractal import Fractal, FractalType
+from ..mergekbar import MergedKbar
+from ..chantypes import KBarRelationship
+from .pentypes import ChanPen, PenDirection, PenBreakType
+from .penrelationship import PenRelationshipHandler, get_three_pens_relationship
+from .penrules import PenRuleValidator
 from datetime import datetime
 
 if TYPE_CHECKING:
-    from .chan import Kbar
-    from .penrules import PenRuleValidator
-    from .context import ChanContext
-    from .line import ChanLine, LineDirection, LineStatus, LineBreakType
-
-
-class PenDirection(Enum):
-    """Pen direction enumeration"""
-    UP = 1      # Upward pen (向上笔)
-    DOWN = -1   # Downward pen (向下笔)
-
-
-class PenBreakType(Enum):
-    """Pen breaking type enumeration"""
-    NONE = 0           # No breaking
-    PARTIAL_BREAK = 1  # Partial breaking
-    FULL_BREAK = 2     # Full breaking
-
-
-@dataclass
-class ChanPen:
-    """Chan Pen data structure"""
-    start_fractal: Fractal
-    end_fractal: Fractal
-    direction: PenDirection
-    high: float
-    low: float
-    length: float
-    raw_kbars: List['Kbar']  # Raw kbars between fractals
-    confirmed: bool = False
-    break_type: PenBreakType = PenBreakType.NONE
-    break_price: Optional[float] = None
-    merged_kbars: Optional[List[MergedKbar]] = None  # Merged kbars in the pen
-    # Validation result fields
-    is_valid: bool = False
-    failed_rules: Optional[List[str]] = None
-    validation_details: Optional[Dict[str, Any]] = None
-    
-    def __post_init__(self):
-        """Calculate pen properties after initialization"""
-        if self.merged_kbars is None:
-            self.merged_kbars = []
-        if self.failed_rules is None:
-            self.failed_rules = []
-        if self.validation_details is None:
-            self.validation_details = {}
-        self._calculate_properties()
-    
-    def _calculate_properties(self):
-        """Calculate pen high, low, and length"""
-        if self.direction == PenDirection.UP:
-            self.high = self.end_fractal.price
-            self.low = self.start_fractal.price
-            self.length = self.high - self.low
-        else:
-            self.high = self.start_fractal.price
-            self.low = self.end_fractal.price
-            self.length = self.high - self.low
-    
-    @property
-    def start_price(self) -> float:
-        """Get pen start price"""
-        return self.start_fractal.price
-    
-    @property
-    def end_price(self) -> float:
-        """Get pen end price"""
-        return self.end_fractal.price
-    
-    @property
-    def start_time(self) -> str:
-        """Get pen start time"""
-        return self.start_fractal.timestamp
-    
-    @property
-    def end_time(self) -> str:
-        """Get pen end time"""  
-        return self.end_fractal.timestamp
-    
-    @property
-    def kbar_count(self) -> int:
-        """Get number of raw kbars in this pen"""
-        return len(self.raw_kbars)
-    
-    @property
-    def merged_kbar_count(self) -> int:
-        """Get number of merged kbars in this pen"""
-        return len(self.merged_kbars) if self.merged_kbars else 0
-    
-    def __repr__(self) -> str:
-        """String representation of the pen"""
-        direction_str = "UP  " if self.direction == PenDirection.UP else "DOWN"
-        valid_str = "VALID" if self.is_valid else "INVALID"
-        return (f"ChanPen(direction={direction_str}, "
-                f"start={self.start_time}, "
-                f"end={self.end_time}, "
-                f"raw_kbars={self.kbar_count:2d}, "
-                f"merged_kbars={self.merged_kbar_count:2d}, "
-                f"length={self.length:8.4f}, "
-                f"status={valid_str})")
+    from ..chan import Kbar
+    from ..context import ChanContext
+    from ..line import ChanLine, LineDirection, LineStatus, LineBreakType, create_line_from_pen
 
 
 class PenProcessor:
@@ -640,7 +545,7 @@ class PenProcessor:
             pen3 = pen_list[i + 2]
             
             # Analyze the 3 consecutive pens using KBarRelationship
-            pen_relationship = self.get_three_pens_relationship(pen1, pen2, pen3)
+            pen_relationship = get_three_pens_relationship(pen1, pen2, pen3)
             self.logger.debug(f"Three pen relationship: {pen_relationship.value} - {pen_relationship.get_description()}")
             # Use pen relationship handler to analyze the three pens
             if hasattr(self, 'pen_relationship_handler') and self.pen_relationship_handler:
@@ -754,42 +659,6 @@ class PenProcessor:
         self.logger.info(f"Processed {len(pen_list)} pens into {len(new_pens)} new pens")
         return new_pens
     
-    def get_three_pens_relationship(self, pen1: ChanPen, pen2: ChanPen, pen3: ChanPen) -> KBarRelationship:
-        """
-        Get the KBarRelationship between 3 consecutive pens
-        
-        This function treats:
-        - pen1 as kbar1 (using pen1's low and high)
-        - pen3 as kbar2 (using pen3's low and high)
-        - pen2 is used for context but not directly in the relationship calculation
-        
-        Args:
-            pen1: First pen (treated as kbar1)
-            pen2: Second pen (for context)
-            pen3: Third pen (treated as kbar2)
-            
-        Returns:
-            KBarRelationship: The relationship between pen1 and pen3
-        """
-        # Use pen1's low and high as kbar1 (d1, g1)
-        d1 = pen1.low   # Low of pen1
-        g1 = pen1.high  # High of pen1
-        
-        # Use pen3's low and high as kbar2 (d2, g2)
-        d2 = pen3.low   # Low of pen3
-        g2 = pen3.high  # High of pen3
-        
-        # Get the relationship using KBarRelationship
-        relationship = KBarRelationship.determine_relationship(d1, g1, d2, g2)
-        
-        self.logger.debug(f"\n\nThree pen relationship analysis:")
-        self.logger.debug(f"{pen1}")
-        self.logger.debug(f"{pen2}")
-        self.logger.debug(f"{pen3}")
-        self.logger.debug(f"  Relationship: {relationship.value} - {relationship.get_description()}")
-        
-        return relationship 
-    
     def handle_analysis_details(self, analysis_details: Dict[str, Any]) -> Dict[str, Any]:
         """
         Parse analysis details from pen relationship analysis
@@ -869,45 +738,6 @@ class PenProcessor:
         self.logger.debug(f"Parsed analysis details: {parsed_result}")
         return parsed_result 
     
-    # FixMe: Should this function be in the line.py file?
-    def create_line_from_pen(self, pen: ChanPen) -> Optional['ChanLine']:
-        """
-        Create a line from a single pen using Chan context
-        
-        This method creates a line from a single pen by treating it as both
-        the start and end pen. This is used in special cases where the first
-        pen should be treated as a line.
-        
-        Args:
-            pen: The pen to create a line from
-            
-        Returns:
-            ChanLine object if successful, None otherwise
-        """
-        if not pen or not pen.is_valid:
-            self.logger.warning("Cannot create line from invalid pen")
-            return None
-        
-        # Import here to avoid circular imports
-        from .line import ChanLine, LineDirection, LineStatus, LineBreakType
-        
-        # Create a line with the pen as both start and end
-        line = ChanLine(
-            start_pen=pen,
-            end_pen=pen,
-            pens=[pen],
-            direction=LineDirection.UP if pen.direction == PenDirection.UP else LineDirection.DOWN,
-            status=LineStatus.COMPLETED,
-            break_type=LineBreakType.NONE,
-            is_global=True,  # Mark as global line
-            confirmed=True
-        )
-        
-        self.logger.info(f"Created line from pen: {line.direction.name} "
-                        f"from {line.start_time} to {line.end_time}, length: {line.length:.4f}")
-        
-        return line
-    
     def add_line_as_global_line(self, line: 'ChanLine') -> bool:
         """
         Add a line as the first global line using Chan context
@@ -945,8 +775,8 @@ class PenProcessor:
         """
         Create a line from a pen and add it as the first global line
         
-        This is a convenience method that combines create_line_from_pen
-        and add_line_as_global_line operations.
+        This is a convenience method that creates a line from a pen
+        and adds it as a global line using the context.
         
         Args:
             pen: The pen to create a line from
@@ -960,7 +790,10 @@ class PenProcessor:
         else:
             raise ValueError("Cannot create line from invalid pen")
         
-        line = self.create_line_from_pen(pen)
+        # Create line from pen using the standalone helper function
+        line = create_line_from_pen(pen)
+        
+        # Add the line as global line
         if line:
             return self.add_line_as_global_line(line)
         return False 

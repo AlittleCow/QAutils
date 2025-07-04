@@ -20,11 +20,12 @@ from typing import List, Optional, Dict, Any, Tuple, TYPE_CHECKING
 from dataclasses import dataclass
 from enum import Enum
 from abc import ABC, abstractmethod
-from .fractal import Fractal, FractalType
-from .pen import ChanPen, PenDirection, PenBreakType
+from ..fractal import Fractal, FractalType
+from ..chantypes import KBarRelationship
+from .pentypes import ChanPen, PenDirection, PenBreakType
 
 if TYPE_CHECKING:
-    from .chan import Kbar
+    from ..chan import Kbar
 
 
 class PenValidationResult(Enum):

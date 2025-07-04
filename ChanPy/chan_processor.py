@@ -15,7 +15,7 @@ from typing import List, Dict, Any, Optional
 from .mergekbar import KbarMerger, MergedKbar
 from .fractal import FractalIdentifier, Fractal
 from .pen import PenProcessor, ChanPen
-from .penrules import PenRuleValidator
+from .pen import PenRuleValidator
 from .line import LineProcessor, ChanLine
 from .chan import Kbar  # Import Kbar from existing chan module
 from .context import ChanContext, ChanState  # Import context management

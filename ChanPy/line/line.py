@@ -7,10 +7,18 @@ represent higher-level trend structures in the Chan algorithm.
 """
 
 import logging
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Tuple, Dict, Any, TYPE_CHECKING
 from dataclasses import dataclass, field
 from enum import Enum
-from .pen import ChanPen, PenDirection, PenBreakType
+from ..fractal import Fractal, FractalType
+from ..mergekbar import MergedKbar
+from ..chantypes import KBarRelationship
+from ..pen import ChanPen, PenDirection, PenBreakType
+from datetime import datetime
+
+if TYPE_CHECKING:
+    from ..chan import Kbar
+    from ..context import ChanContext
 
 
 class LineDirection(Enum):
@@ -127,6 +135,44 @@ class ChanLine:
                 f"End: {end_time_str} @{end_peak:.2f} "
                 f"[Δ{price_change:+.2f} ({price_change_pct:+.1f}%)] "
                 f"Pens:{self.pen_count} Status:{self.status.name})")
+
+
+def create_line_from_pen(pen: ChanPen) -> Optional[ChanLine]:
+    """
+    Create a line from a single pen
+    
+    This helper function creates a line from a single pen by treating it as both
+    the start and end pen. This is used in special cases where the first
+    pen should be treated as a line.
+    
+    Args:
+        pen: The pen to create a line from
+        
+    Returns:
+        ChanLine object if successful, None otherwise
+    """
+    logger = logging.getLogger(__name__)
+    
+    if not pen or not pen.is_valid:
+        logger.warning("Cannot create line from invalid pen")
+        return None
+    
+    # Create a line with the pen as both start and end
+    line = ChanLine(
+        start_pen=pen,
+        end_pen=pen,
+        pens=[pen],
+        direction=LineDirection.UP if pen.direction == PenDirection.UP else LineDirection.DOWN,
+        status=LineStatus.COMPLETED,
+        break_type=LineBreakType.NONE,
+        is_global=True,  # Mark as global line
+        confirmed=True
+    )
+    
+    logger.info(f"Created line from pen: {line.direction.name} "
+                f"from {line.start_time} to {line.end_time}, length: {line.length:.4f}")
+    
+    return line
 
 
 class LineProcessor:

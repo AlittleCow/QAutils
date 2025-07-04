@@ -1,28 +1,33 @@
 """
-ChanPy - Chan Algorithm Implementation
+ChanPy - Chan Algorithm Implementation in Python
 
-A modular implementation of the Chan Algorithm for technical analysis
-following the four-step process:
-1. Merge kbar process for consecutive kbars
-2. Check consecutive merged kbars for fractals  
-3. Process raw kbars from fractal to fractal to identify chanpen
-4. Process chanpen breaking and chanline formation
+A comprehensive implementation of the Chan algorithm for technical analysis.
 """
 
-__version__ = "1.0.0"
-__author__ = "ChanPy Team"
-
-# Import main classes for easy access
-from .chan import Kbar, Pen, Direction, PenType
+from .chan import ChanIndicator
+from .fractal import Fractal, FractalType, FractalIdentifier
+from .mergekbar import MergedKbar, KbarMerger, ChanMergeKbarDirection
+from .chantypes import (
+    KBarRelationship, 
+    Kbar,
+    Direction,
+    PenType,
+    BodySizeCategory,
+    KbarShape
+)
+from .context import ChanContext, ChanState
 from .chan_processor import ChanProcessor
-from .mergekbar import KbarMerger, MergedKbar, ChanMergeKbarDirection
-from .fractal import FractalIdentifier, Fractal, FractalType
 from .pen import PenProcessor, ChanPen, PenDirection
 from .line import LineProcessor, ChanLine, LineDirection
 
+__version__ = "1.0.0"
+
 __all__ = [
-    'Kbar', 'Pen', 'Direction', 'PenType',
-    'MergedKbar', 'ChanMergeKbarDirection', 'Fractal', 'FractalType', 'ChanPen', 'PenDirection', 'ChanLine', 'LineDirection',
-    'ChanProcessor', 'KbarMerger', 'FractalIdentifier', 
-    'PenProcessor', 'LineProcessor'
+    'ChanIndicator',
+    'Fractal', 'FractalType', 'FractalIdentifier', 
+    'MergedKbar', 'KbarMerger', 'ChanMergeKbarDirection',
+    'KBarRelationship', 'Kbar', 'Direction', 'PenType', 'BodySizeCategory', 'KbarShape',
+    'ChanContext', 'ChanState', 'ChanProcessor',
+    'PenProcessor', 'ChanPen', 'PenDirection',
+    'LineProcessor', 'ChanLine', 'LineDirection'
 ] 
