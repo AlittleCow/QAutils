@@ -504,7 +504,7 @@ def setup_logging(log_file: str = "chan_analysis.log", log_level: int = logging.
     # )
     
     simple_formatter = logging.Formatter(
-        '%(levelname)s - %(message)s'
+        '%(levelname)-6s - %(filename)-20s:%(lineno)-4d - %(message)s'
     )
     
     # Create file handler with configurable mode (overwrite or append)
