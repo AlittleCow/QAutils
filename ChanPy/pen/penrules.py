@@ -557,6 +557,21 @@ class FractalSeparationRule(PenRule):
             self.logger.debug(f"Fractal separation validation failed: same timestamp {start_fractal.timestamp}")
             return PenValidationResult.INVALID_FRACTAL_SEPARATION
         
+        # Check if fractal time ranges overlap
+        # Start fractal time range: [left_kbar.timestamp_end, right_kbar.timestamp_end]
+        # End fractal time range: [left_kbar.timestamp_end, right_kbar.timestamp_end]
+        start_fractal_start = start_fractal.left_kbar.timestamp_end
+        start_fractal_end = start_fractal.right_kbar.timestamp_end
+        end_fractal_start = end_fractal.left_kbar.timestamp_end
+        end_fractal_end = end_fractal.right_kbar.timestamp_end
+        
+        # Check if time ranges overlap
+        if start_fractal_end >= end_fractal_start and start_fractal_start <= end_fractal_end:
+            self.logger.debug(f"Fractal separation validation failed: time ranges overlap")
+            self.logger.debug(f"Start fractal range: [{start_fractal_start}, {start_fractal_end}]")
+            self.logger.debug(f"End fractal range: [{end_fractal_start}, {end_fractal_end}]")
+            return PenValidationResult.INVALID_FRACTAL_SEPARATION
+        
         # Ensure minimum separation between fractals
         separation = abs(start_fractal.index - end_fractal.index)
         if separation < 2:
@@ -565,7 +580,7 @@ class FractalSeparationRule(PenRule):
             self.logger.debug(f"End fractal index: {end_fractal.index}")
             return PenValidationResult.INVALID_FRACTAL_SEPARATION
         
-        self.logger.debug(f"Fractal separation validation passed: separation={separation}, different timestamps")
+        self.logger.debug(f"Fractal separation validation passed: separation={separation}, no time range overlap")
         return PenValidationResult.VALID
     
     def get_rule_name(self) -> str:
