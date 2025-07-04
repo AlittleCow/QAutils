@@ -142,7 +142,7 @@ class PenProcessor:
         # Validate with raw kbars using pen validator if available
         if self.pen_validator:
             # Use pen validator's raw kbar validation method
-            if not self.pen_validator.validate_pen_with_raw_kbars(start_fractal, end_fractal):
+            if not self.pen_validator.validate_pen_with_raw_kbars(start_fractal, end_fractal, pen_kbars):
                 is_valid = False
                 failed_rules.append("raw_kbar_validation")
         else:
@@ -197,7 +197,7 @@ class PenProcessor:
         for i in range(len(fractals) - 1):
             start_fractal = fractals[i]
             end_fractal = fractals[i + 1]
-            
+            self.logger.debug(f"🖊️ Creating pen from {start_fractal} to {end_fractal} -->>>")
             pen = self.create_pen(start_fractal, end_fractal)
             if pen:
                 initial_pens.append(pen)

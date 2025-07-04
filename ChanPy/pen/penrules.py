@@ -280,29 +280,28 @@ class PenRuleValidator:
         self.context = context
         self.logger.debug("ChanContext set for pen validator")
     
-    def validate_pen_with_raw_kbars(self, start_fractal: Fractal, end_fractal: Fractal) -> bool:
+    def validate_pen_with_raw_kbars(self, start_fractal: Fractal, end_fractal: Fractal, pen_kbars: List['Kbar']) -> bool:
         """
         Validate a potential pen using raw kbar data
         
         Args:
             start_fractal: Starting fractal
             end_fractal: Ending fractal
+            pen_kbars: Raw kbars between the fractals
             
         Returns:
             True if pen is valid according to raw kbar analysis
         """
-        if not self.raw_kbars:
-            self.logger.warning("No raw kbars available for pen validation")
-            return True  # Allow pen if no raw data available
-        
-        # Find raw kbars between the two fractals
-        pen_kbars = []
-        
-        if self.context:
-            # Use context to get kbars between fractals
-            pen_kbars = get_kbars_between_fractals(start_fractal, end_fractal, self.context)
-        else:
-            raise ValueError("ChanContext not set for pen validation")
+        # If pen_kbars is empty, fallback to fetching from context
+        if not pen_kbars or len(pen_kbars) == 0:
+            self.logger.warning("No pen kbars provided, attempting to fetch from context")
+            if self.context:
+                # Use context to get kbars between fractals
+                pen_kbars = get_kbars_between_fractals(start_fractal, end_fractal, self.context)
+                self.logger.debug(f"Fetched {len(pen_kbars)} kbars from context as fallback")
+            else:
+                self.logger.warning("No context available for fallback kbar fetching")
+                return True  # Allow pen if no data available
         
         if len(pen_kbars) < self.config.min_kbar_count:
             return False
