@@ -566,6 +566,7 @@ def demonstrate_step_by_step_processing():
         start_time=start_time,
         end_time=end_time,
         auto_load_data=True,  # Auto-load to avoid duplicate loading
+        auto_clear_chan_db=True,
         kbar_limit=limit
     )
     

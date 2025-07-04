@@ -446,10 +446,10 @@ class PenProcessor:
         new_pens = []
         
         # Process every 3 consecutive pens
-        for i in range(0, len(pen_list) - 2, 3):
-            pen1 = pen_list[i]
-            pen2 = pen_list[i + 1]
-            pen3 = pen_list[i + 2]
+        for current_pen_index in range(0, len(pen_list) - 2, 3):
+            pen1 = pen_list[current_pen_index]
+            pen2 = pen_list[current_pen_index + 1]
+            pen3 = pen_list[current_pen_index + 2]
             self.logger.debug(f"🖊️ Processing 3 consecutive pens")
             self.logger.debug(f"🖊️ Pen 1: {pen1}")
             self.logger.debug(f"🖊️ Pen 2: {pen2}")
@@ -470,7 +470,7 @@ class PenProcessor:
                     relationship_result, 
                     pen_relationship,
                     pen_list,
-                    i
+                    current_pen_index
                 )
 
                 # Handle the dispatch result
