@@ -14,11 +14,13 @@ from .fractal import Fractal, FractalType
 from .mergekbar import MergedKbar
 from .chantypes import KBarRelationship
 from .penrelationship import PenRelationshipHandler
+from datetime import datetime
 
 if TYPE_CHECKING:
     from .chan import Kbar
     from .penrules import PenRuleValidator
     from .context import ChanContext
+    from .line import ChanLine, LineDirection, LineStatus, LineBreakType
 
 
 class PenDirection(Enum):
@@ -660,7 +662,7 @@ class PenProcessor:
                     self.logger.debug(f"Analysis detail - {key}: {value}")
                 
                 # Parse analysis details to determine processing strategy
-                parsed_details = self.parse_analysis_details(relationship_result.analysis_details)
+                parsed_details = self.handle_analysis_details(relationship_result.analysis_details)
                 self.logger.debug(f"Parsed analysis details: {parsed_details}")
                 
                 # Create new pen if relationship analysis suggests it's appropriate
@@ -698,20 +700,45 @@ class PenProcessor:
                     
                     # Handle special cases based on parsed analysis details
                     if parsed_details['case_type'] == "treat_first_pen_as_line":
-                        self.logger.debug("Special case: treating first pen as line - need to handle pen processing differently")
-                        # TODO: Implement special processing for "treat_first_pen_as_line" case
-                        # This would involve using pen1 as a line and processing next two pens differently
+                        self.logger.info("Special case: treating first pen as line - creating global line from pen1")
+                        # Create and add global line from the first pen
+                        success = self.create_and_add_global_line_from_pen(pen1)
+                        if success:
+                            self.logger.info("Successfully created and added global line from first pen")
+                            # Add pen1 as a line-equivalent pen to the results
+                            # Mark pen1 with special status to indicate it's been converted to a line
+                            pen1.validation_details = pen1.validation_details or {}
+                            pen1.validation_details['converted_to_global_line'] = True
+                            pen1.validation_details['conversion_timestamp'] = datetime.now().isoformat()
+                            new_pens.append(pen1)
+                        else:
+                            self.logger.error("Failed to create and add global line from first pen")
                         
+                        # Continue processing with pen2 and pen3 if available
+                        if len(pen_list) > i + 2:
+                            # Add pen2 and pen3 to continue processing
+                            new_pens.extend([pen2, pen3])
+                            
                     elif parsed_details['case_type'] == "bypass_first_pen":
-                        self.logger.debug("Special case: bypassing first pen - need to shift processing window")
-                        # TODO: Implement special processing for "bypass_first_pen" case
-                        # This would involve skipping pen1 and using pen2 as the starting point
+                        self.logger.info("Special case: bypassing first pen - need to shift processing window")
+                        # Add pen2 and pen3 to continue processing, skip pen1
+                        new_pens.extend([pen2, pen3])
+                        
+                    elif parsed_details['case_type'] == "all_valid":
+                        self.logger.info("All pens are valid - adding all three pens")
+                        # Add all three pens
+                        new_pens.extend([pen1, pen2, pen3])
+                        
+                    else:
+                        self.logger.warning(f"Unknown case type: {parsed_details['case_type']} - using fallback")
+                        # Fallback: add all pens
+                        new_pens.extend([pen1, pen2, pen3])
             
                 # please check the result analysis_details
                 # if there is a case_type = "treat_first_pen_as_line", then we should use pen1 as the first line
                 # and move to the next two pens to create a new pen
                 # otherwise, we should use pen2 as the first line and move to the next two pens to create a new pen
-                # NOTE: This logic is now handled by the parse_analysis_details function above
+                # NOTE: This logic is now handled by the handle_analysis_details function above
                 
             else:
                 self.logger.error("Pen relationship handler not available, using fallback logic")
@@ -763,7 +790,7 @@ class PenProcessor:
         
         return relationship 
     
-    def parse_analysis_details(self, analysis_details: Dict[str, Any]) -> Dict[str, Any]:
+    def handle_analysis_details(self, analysis_details: Dict[str, Any]) -> Dict[str, Any]:
         """
         Parse analysis details from pen relationship analysis
         
@@ -841,3 +868,102 @@ class PenProcessor:
             
         self.logger.debug(f"Parsed analysis details: {parsed_result}")
         return parsed_result 
+    
+    def create_line_from_pen(self, pen: ChanPen) -> Optional['ChanLine']:
+        """
+        Create a line from a single pen using Chan context
+        
+        This method creates a line from a single pen by treating it as both
+        the start and end pen. This is used in special cases where the first
+        pen should be treated as a line.
+        
+        Args:
+            pen: The pen to create a line from
+            
+        Returns:
+            ChanLine object if successful, None otherwise
+        """
+        if not pen or not pen.is_valid:
+            self.logger.warning("Cannot create line from invalid pen")
+            return None
+        
+        # Import here to avoid circular imports
+        from .line import ChanLine, LineDirection, LineStatus, LineBreakType
+        
+        # Create a line with the pen as both start and end
+        line = ChanLine(
+            start_pen=pen,
+            end_pen=pen,
+            pens=[pen],
+            direction=LineDirection.UP if pen.direction == PenDirection.UP else LineDirection.DOWN,
+            status=LineStatus.COMPLETED,
+            break_type=LineBreakType.NONE,
+            is_global=True,  # Mark as global line
+            confirmed=True
+        )
+        
+        self.logger.info(f"Created line from pen: {line.direction.name} "
+                        f"from {line.start_time} to {line.end_time}, length: {line.length:.4f}")
+        
+        return line
+    
+    def add_line_as_global_line(self, line: 'ChanLine') -> bool:
+        """
+        Add a line as the first global line using Chan context
+        
+        Args:
+            line: The line to add as global line
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        if not line or not self.context:
+            self.logger.warning("Cannot add global line: missing line or context")
+            return False
+        
+        try:
+            # Get current lines from context
+            current_lines = []
+            if self.context.current_symbol and self.context.current_exchange and self.context.current_period:
+                state = self.context.get_state(
+                    self.context.current_symbol, 
+                    self.context.current_exchange, 
+                    self.context.current_period
+                )
+                current_lines = state.current_lines.copy()
+            
+            # Add the new line as the first global line
+            new_lines = [line] + current_lines
+            
+            # Update context with new lines
+            self.context.update_lines(
+                new_lines,
+                save_to_db=True  # Save to database
+            )
+            
+            self.logger.info(f"Added global line to context: {line.direction.name} "
+                           f"from {line.start_time} to {line.end_time}")
+            
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Failed to add global line to context: {str(e)}")
+            return False
+    
+    def create_and_add_global_line_from_pen(self, pen: ChanPen) -> bool:
+        """
+        Create a line from a pen and add it as the first global line
+        
+        This is a convenience method that combines create_line_from_pen
+        and add_line_as_global_line operations.
+        
+        Args:
+            pen: The pen to create a line from
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        line = self.create_line_from_pen(pen)
+        if line:
+            return self.add_line_as_global_line(line)
+        return False 
