@@ -137,12 +137,12 @@ class FractalTypeRule(PenRule):
         """
         if not config.allow_same_fractal_type:
             if start_fractal.fractal_type == end_fractal.fractal_type:
-                self.logger.debug(f"Fractal type validation failed: both fractals are {start_fractal.fractal_type}")
+                self.logger.debug(f"FAILED  - Fractal type validation failed: both fractals are {start_fractal.fractal_type}")
                 self.logger.debug(f"Start fractal: {start_fractal}")
                 self.logger.debug(f"End fractal: {end_fractal}")
                 return PenValidationResult.INVALID_FRACTAL_TYPE
         
-        self.logger.debug(f"Fractal type validation passed: {start_fractal.fractal_type} -> {end_fractal.fractal_type}")
+        self.logger.debug(f"PASSED  - Fractal type validation passed: {start_fractal.fractal_type} -> {end_fractal.fractal_type}")
         return PenValidationResult.VALID
     
     def get_rule_name(self) -> str:
@@ -190,20 +190,20 @@ class DirectionConsistencyRule(PenRule):
         if start_fractal.fractal_type == FractalType.BOTTOM:
             # Should be upward pen - ending price should be higher than starting price
             if end_fractal.price <= start_fractal.price:
-                self.logger.debug(f"Direction validation failed for upward pen: end_price={end_fractal.price} <= start_price={start_fractal.price}")
+                self.logger.debug(f"FAILED  - Direction validation failed for upward pen: end_price={end_fractal.price} <= start_price={start_fractal.price}")
                 self.logger.debug(f"Start fractal (BOTTOM): {start_fractal}")
                 self.logger.debug(f"End fractal (should be TOP): {end_fractal}")
                 return PenValidationResult.INVALID_DIRECTION
         else:
             # Should be downward pen - ending price should be lower than starting price
             if end_fractal.price >= start_fractal.price:
-                self.logger.debug(f"Direction validation failed for downward pen: end_price={end_fractal.price} >= start_price={start_fractal.price}")
+                self.logger.debug(f"FAILED  - Direction validation failed for downward pen: end_price={end_fractal.price} >= start_price={start_fractal.price}")
                 self.logger.debug(f"Start fractal (TOP): {start_fractal}")
                 self.logger.debug(f"End fractal (should be BOTTOM): {end_fractal}")
                 return PenValidationResult.INVALID_DIRECTION
         
         direction = "upward" if start_fractal.fractal_type == FractalType.BOTTOM else "downward"
-        self.logger.debug(f"Direction validation passed: {direction} pen from {start_fractal.price} to {end_fractal.price}")
+        self.logger.debug(f"PASSED  - Direction validation passed: {direction} pen from {start_fractal.price} to {end_fractal.price}")
         return PenValidationResult.VALID
     
     def get_rule_name(self) -> str:
@@ -254,17 +254,17 @@ class KbarCountRule(PenRule):
             self.logger.debug(f"Start fractal: {start_fractal}")
             self.logger.debug(f"End fractal  : {end_fractal}")
             self.logger.debug(f"Pen kbars count: {kbar_count}")
-            self.logger.debug(f"Kbar count validation failed: {kbar_count} < min_required={config.min_kbar_count}")
+            self.logger.debug(f"FAILED  - Kbar count validation failed: {kbar_count} < min_required={config.min_kbar_count}")
             return PenValidationResult.INSUFFICIENT_KBARS
         
         if kbar_count > config.max_pen_kbar_count:
             self.logger.debug(f"Start fractal: {start_fractal}")
             self.logger.debug(f"End fractal  : {end_fractal}")
             self.logger.debug(f"Pen kbars count: {kbar_count}")
-            self.logger.debug(f"Kbar count validation failed: {kbar_count} > max_allowed={config.max_pen_kbar_count}")
+            self.logger.debug(f"FAILED  - Kbar count validation failed: {kbar_count} > max_allowed={config.max_pen_kbar_count}")
             return PenValidationResult.INSUFFICIENT_KBARS
         
-        self.logger.debug(f"Kbar count validation passed: {kbar_count} kbars (min={config.min_kbar_count}, max={config.max_pen_kbar_count})")
+        self.logger.debug(f"PASSED  - Kbar count validation passed: {kbar_count} kbars (min={config.min_kbar_count}, max={config.max_pen_kbar_count})")
         return PenValidationResult.VALID
     
     def get_rule_name(self) -> str:
@@ -313,7 +313,7 @@ class PenLengthRule(PenRule):
         # Absolute length check
         if pen_length < config.min_pen_length:
             self.logger.debug(f"Absolute price difference: {pen_length}")
-            self.logger.debug(f"Pen length validation failed (absolute): {pen_length} < min_required={config.min_pen_length}")
+            self.logger.debug(f"FAILED  - Pen length validation failed (absolute): {pen_length} < min_required={config.min_pen_length}")
             return PenValidationResult.INVALID_LENGTH
         
         # Relative length check (percentage of price)
@@ -323,10 +323,10 @@ class PenLengthRule(PenRule):
             self.logger.debug(f"Absolute price difference: {pen_length}")
             self.logger.debug(f"Average price: {avg_price}")
             self.logger.debug(f"Length ratio: {length_ratio:.6f}")
-            self.logger.debug(f"Pen length validation failed (relative): {length_ratio:.6f} < min_required={config.min_pen_length_ratio}")
+            self.logger.debug(f"FAILED  - Pen length validation failed (relative): {length_ratio:.6f} < min_required={config.min_pen_length_ratio}")
             return PenValidationResult.INVALID_LENGTH
         
-        self.logger.debug(f"Pen length validation passed: absolute={pen_length}, relative={length_ratio:.6f} (min_abs={config.min_pen_length}, min_rel={config.min_pen_length_ratio})")
+        self.logger.debug(f"PASSED  - Pen length validation passed: absolute={pen_length}, relative={length_ratio:.6f} (min_abs={config.min_pen_length}, min_rel={config.min_pen_length_ratio})")
         return PenValidationResult.VALID
     
     def get_rule_name(self) -> str:
@@ -385,7 +385,7 @@ class TrendConsistencyRule(PenRule):
             start_low = start_fractal.price
             for kbar in pen_kbars:
                 if kbar.low < start_low * (1 - config.breaking_threshold):
-                    self.logger.debug(f"Trend violation detected: kbar.low={kbar.low} < start_low={start_low} * (1 - {config.breaking_threshold}) = {start_low * (1 - config.breaking_threshold)}")
+                    self.logger.debug(f"DETECTED- Trend violation detected: kbar.low={kbar.low} < start_low={start_low} * (1 - {config.breaking_threshold}) = {start_low * (1 - config.breaking_threshold)}")
                     self.logger.debug(f"Violating kbar: {kbar}")
                     return PenValidationResult.INVALID_TREND
         else:
@@ -396,7 +396,7 @@ class TrendConsistencyRule(PenRule):
             start_high = start_fractal.price
             for kbar in pen_kbars:
                 if kbar.high > start_high * (1 + config.breaking_threshold):
-                    self.logger.debug(f"Trend violation detected: kbar.high={kbar.high} > start_high={start_high} * (1 + {config.breaking_threshold}) = {start_high * (1 + config.breaking_threshold)}")
+                    self.logger.debug(f"DETECTED- Trend violation detected: kbar.high={kbar.high} > start_high={start_high} * (1 + {config.breaking_threshold}) = {start_high * (1 + config.breaking_threshold)}")
                     self.logger.debug(f"Violating kbar: {kbar}")
                     return PenValidationResult.INVALID_TREND
         
@@ -444,12 +444,12 @@ class MACDValidationRule(PenRule):
             PenValidationResult.VALID (placeholder implementation)
         """
         if not config.require_macd_validation:
-            self.logger.debug("MACD validation skipped (disabled in config)")
+            self.logger.debug("SKIPPED - MACD validation skipped (disabled in config)")
             return PenValidationResult.VALID
         
         # This would require MACD calculation implementation
         # For now, return valid - can be implemented later
-        self.logger.debug("MACD validation passed (placeholder implementation)")
+        self.logger.debug("PASSED  - MACD validation passed (placeholder implementation)")
         self.logger.debug(f"Pen kbars count: {len(pen_kbars)}")
         return PenValidationResult.VALID
     
@@ -496,12 +496,12 @@ class VolumeValidationRule(PenRule):
             PenValidationResult.VALID (placeholder implementation)
         """
         if not config.require_volume_validation:
-            self.logger.debug("Volume validation skipped (disabled in config)")
+            self.logger.debug("SKIPPED - Volume validation skipped (disabled in config)")
             return PenValidationResult.VALID
         
         # This would require volume analysis implementation
         # For now, return valid - can be implemented later
-        self.logger.debug("Volume validation passed (placeholder implementation)")
+        self.logger.debug("PASSED  - Volume validation passed (placeholder implementation)")
         self.logger.debug(f"Pen kbars count: {len(pen_kbars)}")
         return PenValidationResult.VALID
     
@@ -555,12 +555,12 @@ class FractalSeparationRule(PenRule):
         """
         # Check if fractals share the same merged kbar index
         if start_fractal.index == end_fractal.index:
-            self.logger.debug(f"Fractal separation validation failed: same index {start_fractal.index}")
+            self.logger.debug(f"FAILED  - Fractal separation validation failed: same index {start_fractal.index}")
             return PenValidationResult.INVALID_FRACTAL_SEPARATION
         
         # Check if fractals are from the same merged kbar timestamp
         if start_fractal.timestamp == end_fractal.timestamp:
-            self.logger.debug(f"Fractal separation validation failed: same timestamp {start_fractal.timestamp}")
+            self.logger.debug(f"FAILED  - Fractal separation validation failed: same timestamp {start_fractal.timestamp}")
             return PenValidationResult.INVALID_FRACTAL_SEPARATION
         
         # Check if fractal time ranges overlap
@@ -583,30 +583,30 @@ class FractalSeparationRule(PenRule):
             if len(pen_kbars) >= config.min_kbar_count:
                 # Additional validation: ensure fractals don't share the exact same raw kbar
                 if not self._fractals_share_raw_kbar(start_fractal, end_fractal):
-                    self.logger.debug(f"Fractal separation validation passed (exclusive case): "
+                    self.logger.debug(f"PASSED  - Fractal separation validation passed (exclusive case): "
                                     f"raw kbars count={len(pen_kbars)} >= min_required={config.min_kbar_count}, "
                                     f"no raw kbar sharing detected")
                     return PenValidationResult.VALID
                 else:
-                    self.logger.debug(f"Fractal separation validation failed: fractals share the same raw kbar")
+                    self.logger.debug(f"FAILED  - Fractal separation validation failed: fractals share the same raw kbar")
                     return PenValidationResult.INVALID_FRACTAL_SEPARATION
             else:
-                self.logger.debug(f"Fractal separation validation failed: insufficient raw kbars count={len(pen_kbars)} < min_required={config.min_kbar_count}")
+                self.logger.debug(f"FAILED  - Fractal separation validation failed: insufficient raw kbars count={len(pen_kbars)} < min_required={config.min_kbar_count}")
         
         # Standard validation for cases without overlap
         if has_time_overlap:
-            self.logger.debug(f"Fractal separation validation failed: time ranges overlap")
+            self.logger.debug(f"FAILED  - Fractal separation validation failed: time ranges overlap")
             self.logger.debug(f"Start fractal range: [{start_fractal_start}, {start_fractal_end}]")
             self.logger.debug(f"End fractal range: [{end_fractal_start}, {end_fractal_end}]")
             return PenValidationResult.INVALID_FRACTAL_SEPARATION
         
         if separation < 2:
-            self.logger.debug(f"Fractal separation validation failed: insufficient separation {separation} < 2")
+            self.logger.debug(f"FAILED  - Fractal separation validation failed: insufficient separation {separation} < 2")
             self.logger.debug(f"Start fractal index: {start_fractal.index}")
             self.logger.debug(f"End fractal index: {end_fractal.index}")
             return PenValidationResult.INVALID_FRACTAL_SEPARATION
         
-        self.logger.debug(f"Fractal separation validation passed: separation={separation}, no time range overlap")
+        self.logger.debug(f"PASSED  - Fractal separation validation passed: separation={separation}, no time range overlap")
         return PenValidationResult.VALID
     
     def _fractals_share_raw_kbar(self, start_fractal: Fractal, end_fractal: Fractal) -> bool:
@@ -743,14 +743,12 @@ class FractalLevelRelationRule(PenRule):
             top_high = end_fractal.price
             
             if top_high <= bottom_low_kbar_high:
-                self.logger.debug(f"Fractal level relation validation failed (bottom-to-top): top_high={top_high} <= bottom_low_kbar_high={bottom_low_kbar_high}")
-                self.logger.debug(f"Start fractal (BOTTOM): {start_fractal}")
-                self.logger.debug(f"End fractal (TOP): {end_fractal}")
+                self.logger.debug(f"FAILED  - Fractal level relation validation failed (bottom-to-top): top_high={top_high} <= bottom_low_kbar_high={bottom_low_kbar_high}")
                 self.logger.debug(f"Bottom fractal K-line highs: left={start_fractal.left_kbar.high}, middle={start_fractal.merged_kbar.high}, right={start_fractal.right_kbar.high}")
                 self.logger.debug(f"Lowest K-line high in bottom fractal: {bottom_low_kbar_high}")
                 return PenValidationResult.INVALID_FRACTAL_LEVEL_RELATION
             
-            self.logger.debug(f"Fractal level relation validation passed (bottom-to-top): top_high={top_high} > bottom_low_kbar_high={bottom_low_kbar_high}")
+            self.logger.debug(f"PASSED  - Fractal level relation validation passed (bottom-to-top): top_high={top_high} > bottom_low_kbar_high={bottom_low_kbar_high}")
         
         elif start_fractal.fractal_type == FractalType.TOP and end_fractal.fractal_type == FractalType.BOTTOM:
             # Top to bottom pen: bottom fractal low should be lower than top fractal's highest K-line low
@@ -758,14 +756,12 @@ class FractalLevelRelationRule(PenRule):
             bottom_low = end_fractal.price
             
             if bottom_low >= top_high_kbar_low:
-                self.logger.debug(f"Fractal level relation validation failed (top-to-bottom): bottom_low={bottom_low} >= top_high_kbar_low={top_high_kbar_low}")
-                self.logger.debug(f"Start fractal (TOP): {start_fractal}")
-                self.logger.debug(f"End fractal (BOTTOM): {end_fractal}")
+                self.logger.debug(f"FAILED  - Fractal level relation validation failed (top-to-bottom): bottom_low={bottom_low} >= top_high_kbar_low={top_high_kbar_low}")
                 self.logger.debug(f"Top fractal K-line lows: left={start_fractal.left_kbar.low}, middle={start_fractal.merged_kbar.low}, right={start_fractal.right_kbar.low}")
                 self.logger.debug(f"Highest K-line low in top fractal: {top_high_kbar_low}")
                 return PenValidationResult.INVALID_FRACTAL_LEVEL_RELATION
             
-            self.logger.debug(f"Fractal level relation validation passed (top-to-bottom): bottom_low={bottom_low} < top_high_kbar_low={top_high_kbar_low}")
+            self.logger.debug(f"PASSED  - Fractal level relation validation passed (top-to-bottom): bottom_low={bottom_low} < top_high_kbar_low={top_high_kbar_low}")
         
         return PenValidationResult.VALID
     

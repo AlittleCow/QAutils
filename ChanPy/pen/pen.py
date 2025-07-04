@@ -131,12 +131,11 @@ class PenProcessor:
                 is_valid = False
                 failed_rules.extend([rule.value for rule in rule_failed_rules])
                 validation_details.update(rule_validation_details)
-                self.logger.debug(f"Pen validation failed: {[rule.value for rule in rule_failed_rules]}")
-                self.logger.debug(f"Validation details: {rule_validation_details}")
+                self.logger.debug(f"FAILED  - Pen validation failed: {[rule.value for rule in rule_failed_rules]}")
             else:
                 is_valid = True
                 validation_details.update(rule_validation_details)
-                self.logger.info(f"Pen validation passed: {rule_validation_details.get('passed_rules', 0)}/{rule_validation_details.get('total_rules', 0)} rules")
+                self.logger.info(f"PASSED  - Pen validation passed: {rule_validation_details.get('passed_rules', 0)}/{rule_validation_details.get('total_rules', 0)} rules")
         
         return is_valid, failed_rules, validation_details
     
@@ -491,7 +490,7 @@ class PenProcessor:
                         self.logger.info("Global line created during dispatch")
                         
                 else:
-                    self.logger.error(f"Dispatch failed: {dispatch_result.error_message}")
+                    self.logger.error(f"FAILED  - Dispatch failed: {dispatch_result.error_message}")
                     # Fallback: add all three pens
                     new_pens.extend([pen1, pen2, pen3])
             
