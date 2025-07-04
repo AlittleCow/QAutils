@@ -626,6 +626,9 @@ class KbarMerger:
         # Volume is sum of both
         merged_volume = kbar1.volume + kbar2.volume
 
+        # Create original_kbars list efficiently
+        original_kbars = [kbar1, kbar2]
+
         return MergedKbar(
             timestamp_start=kbar1.timestamp,
             timestamp_end=kbar2.timestamp,
@@ -635,6 +638,7 @@ class KbarMerger:
             close=merged_close,
             volume=merged_volume,
             original_count=2,
+            original_kbars=original_kbars,
             mergetype=self._get_merge_relationship(kbar1, kbar2),
             merge_direction=merge_direction
         )
@@ -662,6 +666,7 @@ class KbarMerger:
                     close=kbar.close,
                     volume=kbar.volume,
                     original_count=1,
+                    original_kbars=[kbar],
                     mergetype=None,  # No actual merging happened
                     merge_direction=Direction.UNKNOWN
                 )
@@ -719,6 +724,7 @@ class KbarMerger:
                         close=current_kbar.close,
                         volume=current_kbar.volume,
                         original_count=1,
+                        original_kbars=[current_kbar],
                         mergetype=None,  # No actual merging happened
                         merge_direction=Direction.UNKNOWN
                     )
@@ -736,6 +742,7 @@ class KbarMerger:
                     close=current_kbar.close,
                     volume=current_kbar.volume,
                     original_count=1,
+                    original_kbars=[current_kbar],
                     mergetype=None,  # No actual merging happened
                     merge_direction=Direction.UNKNOWN
                 ))
@@ -789,6 +796,10 @@ class KbarMerger:
             new_high = max(merged_kbar.high, kbar.high)
             new_low = min(merged_kbar.low, kbar.low)
 
+        # Create new original_kbars list efficiently using extend()
+        new_original_kbars = merged_kbar.original_kbars.copy()
+        new_original_kbars.append(kbar)
+
         return MergedKbar(
             timestamp_start=merged_kbar.timestamp_start,
             timestamp_end=kbar.timestamp,
@@ -798,6 +809,7 @@ class KbarMerger:
             close=kbar.close,
             volume=merged_kbar.volume + kbar.volume,
             original_count=merged_kbar.original_count + 1,
+            original_kbars=new_original_kbars,
             mergetype=self._get_merge_relationship(temp_kbar, kbar),
             merge_direction=merge_direction
         )

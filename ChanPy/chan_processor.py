@@ -53,6 +53,7 @@ class ChanProcessor:
                  start_time: Optional[str] = None,
                  end_time: Optional[str] = None,
                  auto_load_data: bool = True,
+                 auto_clear_chan_db: bool = False,
                  kbar_limit: int = 1000):
         """
         Initialize Chan Processor
@@ -69,6 +70,7 @@ class ChanProcessor:
             start_time: Start time for data range (format: "YYYY-MM-DD HH:MM:SS")
             end_time: End time for data range (format: "YYYY-MM-DD HH:MM:SS")
             auto_load_data: Whether to automatically load data from database during initialization
+            auto_clear_chan_db: Whether to automatically clear existing Chan lines for this symbol/exchange/period
             kbar_limit: Maximum number of K-bars to load from database
         """
         self.logger = logging.getLogger(f"{__name__}")
@@ -77,6 +79,7 @@ class ChanProcessor:
         self.start_time = start_time
         self.end_time = end_time
         self.kbar_limit = kbar_limit
+        self.auto_clear_chan_db = auto_clear_chan_db
         
         # Initialize context management (but don't set it yet)
         self.context = context if context is not None else ChanContext()
@@ -110,6 +113,23 @@ class ChanProcessor:
             assert period is not None
             
             self.set_context(symbol, exchange, period)
+        
+        # Auto-clear Chan database if requested
+        if auto_clear_chan_db and all([self.context, symbol, exchange, period]):
+            try:
+                # Type guard: we know these are not None after the check above
+                assert symbol is not None
+                assert exchange is not None
+                assert period is not None
+                
+                # Use the database manager to clear Chan lines
+                if self.context.db_manager:
+                    cleared_count = self.context.db_manager.clear_chan_lines(symbol, exchange, period)
+                    self.logger.info(f"Auto-cleared {cleared_count} Chan lines for {symbol}.{exchange} ({period})")
+                else:
+                    raise ValueError("Database manager not available for auto-clearing Chan lines")
+            except Exception as e:
+                self.logger.warning(f"Failed to auto-clear Chan database: {e}")
         
         # Initialize from database if context is available and auto_load_data is True
         if auto_load_data and all([self.context, symbol, exchange, period]):
@@ -238,9 +258,9 @@ class ChanProcessor:
                 
             #     self.context.update_pens(self.pens, self.symbol, self.exchange, self.period)
             
-            # if len(self.pens) < 3:
-            #     self.logger.warning("Insufficient pens for line analysis")
-            #     return self._build_results(results, "Insufficient pens")
+            # # if len(self.pens) < 3:
+            # #     self.logger.warning("Insufficient pens for line analysis")
+            # #     return self._build_results(results, "Insufficient pens")
 
             # # Step 4: Process chanpen breaking and chanline formation
             # self.logger.info("Step 4: Forming lines and analyzing breaking patterns")

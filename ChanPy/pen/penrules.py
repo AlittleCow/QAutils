@@ -5,7 +5,7 @@ This module implements the comprehensive pen formation and validation rules
 according to Chan Zhongshuochan's theory. It provides strict validation
 criteria for pen formation, breaking analysis, and quality assessment.
 
-Chan Theory Pen Rules:
+Chan Theory Pen Rules Implementation:
 1. Pen Formation Rules - Basic requirements for valid pen formation
 2. Fractal Validation - Ensure proper fractal connections
 3. Kbar Validation - Validate pen against underlying kbar data
@@ -13,6 +13,12 @@ Chan Theory Pen Rules:
 5. Length Requirements - Minimum pen length and strength criteria
 6. Breaking Analysis - Detect pen breaking patterns
 7. Quality Assessment - Evaluate pen reliability and strength
+
+Implements the following Chan Theory Pen Standards (笔的定义):
+Standard 1: 一笔必须至少有5根K线 (A pen must have at least 5 K-lines)
+Standard 2: 顶分型和底分型绝对不能共用同一根K线 (Top and bottom fractals cannot share the same K-line)
+Standard 3: 若没有构造出一个向上笔时，行情再次新低，则从新低的K线处重新开始构造 (Pen construction restart logic - implemented in pen construction algorithm)
+Standard 4: 顶不能在底里，底不能在顶里 (Top cannot be inside bottom, bottom cannot be inside top)
 """
 
 import logging
@@ -39,6 +45,8 @@ class PenValidationResult(Enum):
     INVALID_TREND = "invalid_trend"
     INVALID_MACD = "invalid_macd"
     INVALID_VOLUME = "invalid_volume"
+    INVALID_FRACTAL_SEPARATION = "invalid_fractal_separation"
+    INVALID_FRACTAL_LEVEL_RELATION = "invalid_fractal_level_relation"
 
 
 class PenQuality(Enum):
@@ -67,6 +75,11 @@ class PenValidationConfig:
 class PenRule(ABC):
     """Abstract base class for pen validation rules"""
     
+    def __init__(self):
+        """Initialize the pen rule with logger"""
+        import logging
+        self.logger = logging.getLogger(self.__class__.__name__)
+    
     @abstractmethod
     def validate(self, start_fractal: Fractal, end_fractal: Fractal, 
                 pen_kbars: List['Kbar'], config: PenValidationConfig) -> PenValidationResult:
@@ -91,141 +104,675 @@ class PenRule(ABC):
 
 
 class FractalTypeRule(PenRule):
-    """Rule 1: Validate fractal types are different"""
+    """
+    Rule 1: Validate fractal types are different (Partial Standard 2)
+    
+    This rule ensures that the starting and ending fractals of a pen are of different
+    types. A valid pen must connect a bottom fractal to a top fractal (upward pen) or
+    a top fractal to a bottom fractal (downward pen). This is a fundamental requirement
+    for pen formation in Chan theory.
+    
+    The rule can be configured to allow same fractal types through the configuration
+    parameter, but this is generally not recommended for strict Chan theory compliance.
+    """
     
     def validate(self, start_fractal: Fractal, end_fractal: Fractal, 
                 pen_kbars: List['Kbar'], config: PenValidationConfig) -> PenValidationResult:
-        """Validate that start and end fractals are of different types"""
+        """
+        Validate that start and end fractals are of different types
+        
+        This method checks that the starting and ending fractals have different types,
+        which is essential for proper pen formation. Same-type fractals would indicate
+        an invalid pen structure that doesn't follow Chan theory principles.
+        
+        Args:
+            start_fractal: The starting fractal of the pen
+            end_fractal: The ending fractal of the pen
+            pen_kbars: List of kbars between fractals (not used in this rule)
+            config: Configuration containing fractal type validation settings
+            
+        Returns:
+            PenValidationResult.VALID if fractal types are different,
+            PenValidationResult.INVALID_FRACTAL_TYPE if they are the same
+        """
         if not config.allow_same_fractal_type:
             if start_fractal.fractal_type == end_fractal.fractal_type:
+                self.logger.debug(f"FAILED  - Fractal type validation failed: both fractals are {start_fractal.fractal_type}")
+                self.logger.debug(f"Start fractal: {start_fractal}")
+                self.logger.debug(f"End fractal: {end_fractal}")
                 return PenValidationResult.INVALID_FRACTAL_TYPE
+        
+        self.logger.debug(f"PASSED  - Fractal type validation passed: {start_fractal.fractal_type} -> {end_fractal.fractal_type}")
         return PenValidationResult.VALID
     
     def get_rule_name(self) -> str:
+        """
+        Get the name of this validation rule
+        
+        Returns:
+            String identifier for the FractalTypeRule
+        """
         return "FractalTypeRule"
 
 
 class DirectionConsistencyRule(PenRule):
-    """Rule 2: Validate pen direction consistency"""
+    """
+    Rule 2: Validate pen direction consistency (Supporting Standard 1)
+    
+    This rule ensures that the direction of the pen matches the types of the starting
+    and ending fractals. For a bottom-to-top pen (upward), the ending price must be
+    higher than the starting price. For a top-to-bottom pen (downward), the ending
+    price must be lower than the starting price.
+    
+    This validation prevents the creation of pens where the price movement contradicts
+    the fractal type relationship, which would violate fundamental Chan theory principles.
+    """
     
     def validate(self, start_fractal: Fractal, end_fractal: Fractal, 
                 pen_kbars: List['Kbar'], config: PenValidationConfig) -> PenValidationResult:
-        """Validate pen direction matches fractal types"""
+        """
+        Validate pen direction matches fractal types
+        
+        This method checks that the price movement direction is consistent with the
+        fractal types. A bottom fractal should lead to higher prices (upward pen),
+        and a top fractal should lead to lower prices (downward pen).
+        
+        Args:
+            start_fractal: The starting fractal that defines the pen's beginning
+            end_fractal: The ending fractal that defines the pen's end
+            pen_kbars: List of kbars between fractals (not used in this rule)
+            config: Configuration settings (not used in this rule)
+            
+        Returns:
+            PenValidationResult.VALID if direction is consistent with fractal types,
+            PenValidationResult.INVALID_DIRECTION if direction contradicts fractal types
+        """
         if start_fractal.fractal_type == FractalType.BOTTOM:
-            # Should be upward pen
+            # Should be upward pen - ending price should be higher than starting price
             if end_fractal.price <= start_fractal.price:
+                self.logger.debug(f"FAILED  - Direction validation failed for upward pen: end_price={end_fractal.price} <= start_price={start_fractal.price}")
+                self.logger.debug(f"Start fractal (BOTTOM): {start_fractal}")
+                self.logger.debug(f"End fractal (should be TOP): {end_fractal}")
                 return PenValidationResult.INVALID_DIRECTION
         else:
-            # Should be downward pen
+            # Should be downward pen - ending price should be lower than starting price
             if end_fractal.price >= start_fractal.price:
+                self.logger.debug(f"FAILED  - Direction validation failed for downward pen: end_price={end_fractal.price} >= start_price={start_fractal.price}")
+                self.logger.debug(f"Start fractal (TOP): {start_fractal}")
+                self.logger.debug(f"End fractal (should be BOTTOM): {end_fractal}")
                 return PenValidationResult.INVALID_DIRECTION
+        
+        direction = "upward" if start_fractal.fractal_type == FractalType.BOTTOM else "downward"
+        self.logger.debug(f"PASSED  - Direction validation passed: {direction} pen from {start_fractal.price} to {end_fractal.price}")
         return PenValidationResult.VALID
     
     def get_rule_name(self) -> str:
+        """
+        Get the name of this validation rule
+        
+        Returns:
+            String identifier for the DirectionConsistencyRule
+        """
         return "DirectionConsistencyRule"
 
 
 class KbarCountRule(PenRule):
-    """Rule 3: Validate minimum kbar count"""
+    """
+    Rule 3: Validate minimum kbar count (Standard 1: 一笔必须至少有5根K线)
+    
+    This rule implements the fundamental Chan theory requirement that a pen must
+    contain at least 5 K-lines. This ensures that the pen has sufficient price
+    action to be considered meaningful and reduces noise from very short-term
+    price movements.
+    
+    The rule also enforces a maximum kbar count to prevent excessively long pens
+    that might span multiple market cycles and lose their analytical value.
+    """
     
     def validate(self, start_fractal: Fractal, end_fractal: Fractal, 
                 pen_kbars: List['Kbar'], config: PenValidationConfig) -> PenValidationResult:
-        """Validate minimum kbar count requirement"""
-        if len(pen_kbars) < config.min_kbar_count:
+        """
+        Validate minimum kbar count requirement
+        
+        This method checks that the number of kbars between the starting and ending
+        fractals meets the minimum requirement of 5 K-lines as specified in Chan theory.
+        It also ensures the pen doesn't exceed the maximum allowed length.
+        
+        Args:
+            start_fractal: The starting fractal of the pen
+            end_fractal: The ending fractal of the pen
+            pen_kbars: List of kbars between the start and end fractals
+            config: Configuration containing kbar count limits
+            
+        Returns:
+            PenValidationResult.VALID if kbar count is within acceptable range,
+            PenValidationResult.INSUFFICIENT_KBARS if count is too low or too high
+        """
+        kbar_count = len(pen_kbars)
+        
+        if kbar_count < config.min_kbar_count:
+            self.logger.debug(f"Start fractal: {start_fractal}")
+            self.logger.debug(f"End fractal  : {end_fractal}")
+            self.logger.debug(f"Pen kbars count: {kbar_count}")
+            self.logger.debug(f"FAILED  - Kbar count validation failed: {kbar_count} < min_required={config.min_kbar_count}")
             return PenValidationResult.INSUFFICIENT_KBARS
-        if len(pen_kbars) > config.max_pen_kbar_count:
+        
+        if kbar_count > config.max_pen_kbar_count:
+            self.logger.debug(f"Start fractal: {start_fractal}")
+            self.logger.debug(f"End fractal  : {end_fractal}")
+            self.logger.debug(f"Pen kbars count: {kbar_count}")
+            self.logger.debug(f"FAILED  - Kbar count validation failed: {kbar_count} > max_allowed={config.max_pen_kbar_count}")
             return PenValidationResult.INSUFFICIENT_KBARS
+        
+        self.logger.debug(f"PASSED  - Kbar count validation passed: {kbar_count} kbars (min={config.min_kbar_count}, max={config.max_pen_kbar_count})")
         return PenValidationResult.VALID
     
     def get_rule_name(self) -> str:
+        """
+        Get the name of this validation rule
+        
+        Returns:
+            String identifier for the KbarCountRule
+        """
         return "KbarCountRule"
 
 
 class PenLengthRule(PenRule):
-    """Rule 4: Validate pen length requirements"""
+    """
+    Rule 4: Validate pen length requirements
+    
+    This rule ensures that a pen meets minimum length requirements both in absolute
+    terms and as a percentage of the price level. This prevents the creation of
+    insignificant pens that might be caused by minor price fluctuations or market noise.
+    
+    The rule validates both absolute price difference and relative percentage change
+    to ensure the pen represents a meaningful price movement worthy of analysis.
+    """
     
     def validate(self, start_fractal: Fractal, end_fractal: Fractal, 
                 pen_kbars: List['Kbar'], config: PenValidationConfig) -> PenValidationResult:
-        """Validate pen length meets minimum requirements"""
+        """
+        Validate pen length meets minimum requirements
+        
+        This method checks that the price difference between the starting and ending
+        fractals meets both absolute and relative minimum thresholds. This ensures
+        that only meaningful price movements are considered valid pens.
+        
+        Args:
+            start_fractal: The starting fractal of the pen
+            end_fractal: The ending fractal of the pen
+            pen_kbars: List of kbars between fractals (not used in this rule)
+            config: Configuration containing length requirements
+            
+        Returns:
+            PenValidationResult.VALID if pen length meets requirements,
+            PenValidationResult.INVALID_LENGTH if length is insufficient
+        """
         pen_length = abs(end_fractal.price - start_fractal.price)
         
         # Absolute length check
         if pen_length < config.min_pen_length:
+            self.logger.debug(f"Absolute price difference: {pen_length}")
+            self.logger.debug(f"FAILED  - Pen length validation failed (absolute): {pen_length} < min_required={config.min_pen_length}")
             return PenValidationResult.INVALID_LENGTH
         
         # Relative length check (percentage of price)
         avg_price = (start_fractal.price + end_fractal.price) / 2
         length_ratio = pen_length / avg_price
         if length_ratio < config.min_pen_length_ratio:
+            self.logger.debug(f"Absolute price difference: {pen_length}")
+            self.logger.debug(f"Average price: {avg_price}")
+            self.logger.debug(f"Length ratio: {length_ratio:.6f}")
+            self.logger.debug(f"FAILED  - Pen length validation failed (relative): {length_ratio:.6f} < min_required={config.min_pen_length_ratio}")
             return PenValidationResult.INVALID_LENGTH
         
+        self.logger.debug(f"PASSED  - Pen length validation passed: absolute={pen_length}, relative={length_ratio:.6f} (min_abs={config.min_pen_length}, min_rel={config.min_pen_length_ratio})")
         return PenValidationResult.VALID
     
     def get_rule_name(self) -> str:
+        """
+        Get the name of this validation rule
+        
+        Returns:
+            String identifier for the PenLengthRule
+        """
         return "PenLengthRule"
 
 
 class TrendConsistencyRule(PenRule):
-    """Rule 5: Validate trend consistency throughout pen"""
+    """
+    Rule 5: Validate trend consistency throughout pen
+    
+    This rule ensures that the price movement within a pen maintains consistent
+    directional behavior relative to the starting fractal. For upward pens (starting
+    from a bottom fractal), no kbar should break significantly below the starting
+    price. For downward pens (starting from a top fractal), no kbar should break
+    significantly above the starting price.
+    
+    The rule uses a configurable breaking threshold to allow for minor price
+    fluctuations while preventing significant trend violations that would invalidate
+    the pen's directional integrity.
+    """
     
     def validate(self, start_fractal: Fractal, end_fractal: Fractal, 
                 pen_kbars: List['Kbar'], config: PenValidationConfig) -> PenValidationResult:
-        """Validate trend consistency in pen kbars"""
+        """
+        Validate trend consistency in pen kbars
+        
+        This method checks that all kbars within the pen maintain the expected
+        directional trend relative to the starting fractal. It prevents pens from
+        being created when there are significant price movements that contradict
+        the intended direction of the pen.
+        
+        Args:
+            start_fractal: The starting fractal that defines the pen's beginning
+            end_fractal: The ending fractal that defines the pen's end
+            pen_kbars: List of kbars between the start and end fractals
+            config: Configuration containing trend consistency settings
+            
+        Returns:
+            PenValidationResult.VALID if trend is consistent throughout the pen,
+            PenValidationResult.INVALID_TREND if any kbar violates the trend
+        """
         if not config.require_trend_consistency or not pen_kbars:
             return PenValidationResult.VALID
         
         if start_fractal.fractal_type == FractalType.BOTTOM:
             # Upward pen - no kbar low should break below start
+            # For upward pens starting from a bottom fractal, we expect the price
+            # to generally move upward. If any kbar's low breaks significantly
+            # below the starting price, it indicates a trend violation.
             start_low = start_fractal.price
             for kbar in pen_kbars:
                 if kbar.low < start_low * (1 - config.breaking_threshold):
+                    self.logger.debug(f"DETECTED- Trend violation detected: kbar.low={kbar.low} < start_low={start_low} * (1 - {config.breaking_threshold}) = {start_low * (1 - config.breaking_threshold)}")
+                    self.logger.debug(f"Violating kbar: {kbar}")
                     return PenValidationResult.INVALID_TREND
         else:
             # Downward pen - no kbar high should break above start
+            # For downward pens starting from a top fractal, we expect the price
+            # to generally move downward. If any kbar's high breaks significantly
+            # above the starting price, it indicates a trend violation.
             start_high = start_fractal.price
             for kbar in pen_kbars:
                 if kbar.high > start_high * (1 + config.breaking_threshold):
+                    self.logger.debug(f"DETECTED- Trend violation detected: kbar.high={kbar.high} > start_high={start_high} * (1 + {config.breaking_threshold}) = {start_high * (1 + config.breaking_threshold)}")
+                    self.logger.debug(f"Violating kbar: {kbar}")
                     return PenValidationResult.INVALID_TREND
         
         return PenValidationResult.VALID
     
     def get_rule_name(self) -> str:
+        """
+        Get the name of this validation rule
+        
+        Returns:
+            String identifier for the TrendConsistencyRule
+        """
         return "TrendConsistencyRule"
 
 
 class MACDValidationRule(PenRule):
-    """Rule 6: Validate MACD consistency (if enabled)"""
+    """
+    Rule 6: Validate MACD consistency (if enabled)
+    
+    This rule validates that the MACD (Moving Average Convergence Divergence) indicator
+    supports the direction of the pen. When enabled, this rule ensures that the MACD
+    trend aligns with the pen direction, providing additional confirmation of the
+    price movement's validity.
+    
+    Currently, this rule is a placeholder for future MACD implementation and returns
+    VALID by default when MACD validation is disabled.
+    """
     
     def validate(self, start_fractal: Fractal, end_fractal: Fractal, 
                 pen_kbars: List['Kbar'], config: PenValidationConfig) -> PenValidationResult:
-        """Validate MACD trend consistency"""
+        """
+        Validate MACD trend consistency
+        
+        This method would check that the MACD indicator supports the pen direction.
+        For upward pens, MACD should show bullish signals, and for downward pens,
+        MACD should show bearish signals. Currently returns VALID as a placeholder.
+        
+        Args:
+            start_fractal: The starting fractal of the pen
+            end_fractal: The ending fractal of the pen
+            pen_kbars: List of kbars between fractals (would be used for MACD calculation)
+            config: Configuration containing MACD validation settings
+            
+        Returns:
+            PenValidationResult.VALID (placeholder implementation)
+        """
         if not config.require_macd_validation:
+            self.logger.debug("SKIPPED - MACD validation skipped (disabled in config)")
             return PenValidationResult.VALID
         
         # This would require MACD calculation implementation
         # For now, return valid - can be implemented later
+        self.logger.debug("PASSED  - MACD validation passed (placeholder implementation)")
+        self.logger.debug(f"Pen kbars count: {len(pen_kbars)}")
         return PenValidationResult.VALID
     
     def get_rule_name(self) -> str:
+        """
+        Get the name of this validation rule
+        
+        Returns:
+            String identifier for the MACDValidationRule
+        """
         return "MACDValidationRule"
 
 
 class VolumeValidationRule(PenRule):
-    """Rule 7: Validate volume patterns (if enabled)"""
+    """
+    Rule 7: Validate volume patterns (if enabled)
+    
+    This rule validates that the volume patterns within the pen support the price
+    movement direction. When enabled, this rule ensures that volume characteristics
+    align with the pen direction, providing additional confirmation of the price
+    movement's strength and validity.
+    
+    Currently, this rule is a placeholder for future volume analysis implementation
+    and returns VALID by default when volume validation is disabled.
+    """
     
     def validate(self, start_fractal: Fractal, end_fractal: Fractal, 
                 pen_kbars: List['Kbar'], config: PenValidationConfig) -> PenValidationResult:
-        """Validate volume patterns in pen"""
+        """
+        Validate volume patterns in pen
+        
+        This method would analyze volume patterns to confirm the pen's validity.
+        For upward pens, volume should generally increase on up moves and decrease
+        on down moves. For downward pens, volume should support the downward movement.
+        Currently returns VALID as a placeholder.
+        
+        Args:
+            start_fractal: The starting fractal of the pen
+            end_fractal: The ending fractal of the pen
+            pen_kbars: List of kbars between fractals (would be used for volume analysis)
+            config: Configuration containing volume validation settings
+            
+        Returns:
+            PenValidationResult.VALID (placeholder implementation)
+        """
         if not config.require_volume_validation:
+            self.logger.debug("SKIPPED - Volume validation skipped (disabled in config)")
             return PenValidationResult.VALID
         
         # This would require volume analysis implementation
         # For now, return valid - can be implemented later
+        self.logger.debug("PASSED  - Volume validation passed (placeholder implementation)")
+        self.logger.debug(f"Pen kbars count: {len(pen_kbars)}")
         return PenValidationResult.VALID
     
     def get_rule_name(self) -> str:
+        """
+        Get the name of this validation rule
+        
+        Returns:
+            String identifier for the VolumeValidationRule
+        """
         return "VolumeValidationRule"
 
+
+class FractalSeparationRule(PenRule):
+    """
+    Rule 8: Validate that fractals don't share the same K-line (Standard 2)
+    
+    This rule implements Standard 2 of Chan theory: "顶分型和底分型绝对不能共用同一根K线"
+    (Top and bottom fractals absolutely cannot share the same K-line). This ensures
+    that the starting and ending fractals of a pen are properly separated and don't
+    overlap in their K-line positions.
+    
+    The rule validates that fractals have different indices, timestamps, and maintain
+    minimum separation to ensure proper pen formation according to Chan theory.
+    
+    Special case: If fractals meet the minimum kbar count from raw kbars perspective,
+    they are considered valid even if there's overlap at the merged kbar level.
+    """
+    
+    def validate(self, start_fractal: Fractal, end_fractal: Fractal, 
+                pen_kbars: List['Kbar'], config: PenValidationConfig) -> PenValidationResult:
+        """
+        Validate that start and end fractals don't share the same K-line
+        
+        This method ensures that the starting and ending fractals are properly
+        separated and don't share the same K-line position, which would violate
+        fundamental Chan theory principles for pen formation.
+        
+        Special handling: If the pen meets minimum kbar count from raw kbars perspective,
+        fractals are considered valid even with merged kbar level overlap.
+        
+        Args:
+            start_fractal: The starting fractal of the pen
+            end_fractal: The ending fractal of the pen
+            pen_kbars: List of kbars between fractals (used for raw kbar validation)
+            config: Configuration settings (min_kbar_count used for raw kbar check)
+            
+        Returns:
+            PenValidationResult.VALID if fractals are properly separated,
+            PenValidationResult.INVALID_FRACTAL_SEPARATION if they share K-lines
+        """
+        # Check if fractals share the same merged kbar index
+        if start_fractal.index == end_fractal.index:
+            self.logger.debug(f"FAILED  - Fractal separation validation failed: same index {start_fractal.index}")
+            return PenValidationResult.INVALID_FRACTAL_SEPARATION
+        
+        # Check if fractals are from the same merged kbar timestamp
+        if start_fractal.timestamp == end_fractal.timestamp:
+            self.logger.debug(f"FAILED  - Fractal separation validation failed: same timestamp {start_fractal.timestamp}")
+            return PenValidationResult.INVALID_FRACTAL_SEPARATION
+        
+        # Check if fractal time ranges overlap
+        # Start fractal time range: [left_kbar.timestamp_end, right_kbar.timestamp_end]
+        # End fractal time range: [left_kbar.timestamp_end, right_kbar.timestamp_end]
+        start_fractal_start = start_fractal.left_kbar.timestamp_end
+        start_fractal_end = start_fractal.right_kbar.timestamp_end
+        end_fractal_start = end_fractal.left_kbar.timestamp_end
+        end_fractal_end = end_fractal.right_kbar.timestamp_end
+        
+        # Check if time ranges overlap
+        has_time_overlap = start_fractal_end >= end_fractal_start and start_fractal_start <= end_fractal_end
+        
+        # Check minimum separation between fractals
+        separation = abs(start_fractal.index - end_fractal.index)
+        
+        # EXCLUSIVE CASE: If there's overlap at merged kbar level but raw kbars meet minimum count
+        if has_time_overlap or separation < 2:
+            # Check if pen meets minimum kbar count from raw kbars perspective
+            if len(pen_kbars) >= config.min_kbar_count:
+                # Additional validation: ensure fractals don't share the exact same raw kbar
+                if not self._fractals_share_raw_kbar(start_fractal, end_fractal):
+                    self.logger.debug(f"PASSED  - Fractal separation validation passed (exclusive case): "
+                                    f"raw kbars count={len(pen_kbars)} >= min_required={config.min_kbar_count}, "
+                                    f"no raw kbar sharing detected")
+                    return PenValidationResult.VALID
+                else:
+                    self.logger.debug(f"FAILED  - Fractal separation validation failed: fractals share the same raw kbar")
+                    return PenValidationResult.INVALID_FRACTAL_SEPARATION
+            else:
+                self.logger.debug(f"FAILED  - Fractal separation validation failed: insufficient raw kbars count={len(pen_kbars)} < min_required={config.min_kbar_count}")
+        
+        # Standard validation for cases without overlap
+        if has_time_overlap:
+            self.logger.debug(f"FAILED  - Fractal separation validation failed: time ranges overlap")
+            self.logger.debug(f"Start fractal range: [{start_fractal_start}, {start_fractal_end}]")
+            self.logger.debug(f"End fractal range: [{end_fractal_start}, {end_fractal_end}]")
+            return PenValidationResult.INVALID_FRACTAL_SEPARATION
+        
+        if separation < 2:
+            self.logger.debug(f"FAILED  - Fractal separation validation failed: insufficient separation {separation} < 2")
+            self.logger.debug(f"Start fractal index: {start_fractal.index}")
+            self.logger.debug(f"End fractal index: {end_fractal.index}")
+            return PenValidationResult.INVALID_FRACTAL_SEPARATION
+        
+        self.logger.debug(f"PASSED  - Fractal separation validation passed: separation={separation}, no time range overlap")
+        return PenValidationResult.VALID
+    
+    def _fractals_share_raw_kbar(self, start_fractal: Fractal, end_fractal: Fractal) -> bool:
+        """
+        Check if fractals share the exact same raw kbar
+        
+        This method examines the raw kbar components of both fractals to determine
+        if they share any of the same underlying raw kbars, which would indicate
+        a true violation of the separation rule.
+        
+        Relaxing exclusive cases:
+        1. If start fractal's center + right raw kbars count >= 3, allow sharing
+        2. If end fractal's center + left raw kbars count >= 3, allow sharing
+        3. These cases handle scenarios where fractals have sufficient raw kbar coverage
+           despite sharing boundary raw kbars
+        
+        Args:
+            start_fractal: The starting fractal to check
+            end_fractal: The ending fractal to check
+            
+        Returns:
+            True if fractals share the same raw kbar AND don't meet relaxing conditions,
+            False if no sharing or relaxing conditions are met
+        """
+        # Get all raw kbar timestamps from start fractal
+        start_raw_timestamps = set()
+        start_center_right_count = 0  # Count of center + right raw kbars
+        
+        for kbar in [start_fractal.left_kbar, start_fractal.merged_kbar, start_fractal.right_kbar]:
+            if hasattr(kbar, 'original_kbars') and kbar.original_kbars:
+                kbar_timestamps = {raw_kbar.timestamp for raw_kbar in kbar.original_kbars}
+                start_raw_timestamps.update(kbar_timestamps)
+                
+                # Count center + right raw kbars for start fractal
+                if kbar == start_fractal.merged_kbar or kbar == start_fractal.right_kbar:
+                    start_center_right_count += len(kbar_timestamps)
+            else:
+                # If no original_kbars attribute, use the kbar's own timestamp
+                # For MergedKbar, use timestamp_end as the primary timestamp
+                if hasattr(kbar, 'timestamp_end'):
+                    start_raw_timestamps.add(kbar.timestamp_end)
+                    # Count as 1 raw kbar for center + right
+                    if kbar == start_fractal.merged_kbar or kbar == start_fractal.right_kbar:
+                        start_center_right_count += 1
+        
+        # Get all raw kbar timestamps from end fractal
+        end_raw_timestamps = set()
+        end_center_left_count = 0  # Count of center + left raw kbars
+        
+        for kbar in [end_fractal.left_kbar, end_fractal.merged_kbar, end_fractal.right_kbar]:
+            if hasattr(kbar, 'original_kbars') and kbar.original_kbars:
+                kbar_timestamps = {raw_kbar.timestamp for raw_kbar in kbar.original_kbars}
+                end_raw_timestamps.update(kbar_timestamps)
+                
+                # Count center + left raw kbars for end fractal
+                if kbar == end_fractal.merged_kbar or kbar == end_fractal.left_kbar:
+                    end_center_left_count += len(kbar_timestamps)
+            else:
+                # If no original_kbars attribute, use the kbar's own timestamp
+                # For MergedKbar, use timestamp_end as the primary timestamp
+                if hasattr(kbar, 'timestamp_end'):
+                    end_raw_timestamps.add(kbar.timestamp_end)
+                    # Count as 1 raw kbar for center + left
+                    if kbar == end_fractal.merged_kbar or kbar == end_fractal.left_kbar:
+                        end_center_left_count += 1
+        
+        # Check for intersection
+        shared_timestamps = start_raw_timestamps.intersection(end_raw_timestamps)
+        
+        if shared_timestamps:
+            self.logger.debug(f"Raw kbar sharing detected: {len(shared_timestamps)} shared timestamps")
+            self.logger.debug(f"Shared timestamps: {sorted(shared_timestamps)}")
+            
+            # Apply relaxing exclusive cases
+            if start_center_right_count >= 3:
+                self.logger.debug(f"Relaxing case 1: start fractal center+right raw kbars count={start_center_right_count} >= 3, allowing sharing")
+                return False  # Allow sharing
+            
+            if end_center_left_count >= 3:
+                self.logger.debug(f"Relaxing case 2: end fractal center+left raw kbars count={end_center_left_count} >= 3, allowing sharing")
+                return False  # Allow sharing
+            
+            self.logger.debug(f"Raw kbar sharing not allowed: start_center_right_count={start_center_right_count}, end_center_left_count={end_center_left_count}")
+            return True  # Sharing detected and no relaxing conditions met
+        
+        self.logger.debug(f"No raw kbar sharing detected")
+        return False
+    
+    def get_rule_name(self) -> str:
+        """
+        Get the name of this validation rule
+        
+        Returns:
+            String identifier for the FractalSeparationRule
+        """
+        return "FractalSeparationRule"
+
+
+class FractalLevelRelationRule(PenRule):
+    """
+    Rule 9: Validate fractal level relationships (Standard 4)
+    
+    This rule implements Standard 4 of Chan theory: "顶不能在底里，底不能在顶里"
+    (Top cannot be inside bottom, bottom cannot be inside top). This ensures that
+    the price levels of fractals maintain proper hierarchical relationships.
+    
+    For bottom-to-top pens, the top fractal's high must be higher than the bottom
+    fractal's lowest K-line high. For top-to-bottom pens, the bottom fractal's low
+    must be lower than the top fractal's highest K-line low.
+    """
+    
+    def validate(self, start_fractal: Fractal, end_fractal: Fractal, 
+                pen_kbars: List['Kbar'], config: PenValidationConfig) -> PenValidationResult:
+        """
+        Validate that top fractal is not inside bottom fractal and vice versa
+        Standard 4: 顶不能在底里，底不能在顶里
+        
+        This method ensures that the price levels of the starting and ending fractals
+        maintain proper hierarchical relationships according to Chan theory principles.
+        
+        Args:
+            start_fractal: The starting fractal of the pen
+            end_fractal: The ending fractal of the pen
+            pen_kbars: List of kbars between fractals (not used in this rule)
+            config: Configuration settings (not used in this rule)
+            
+        Returns:
+            PenValidationResult.VALID if fractal levels are properly related,
+            PenValidationResult.INVALID_FRACTAL_LEVEL_RELATION if levels are invalid
+        """
+        if start_fractal.fractal_type == FractalType.BOTTOM and end_fractal.fractal_type == FractalType.TOP:
+            # Bottom to top pen: top fractal high should be higher than bottom fractal's lowest K-line high
+            bottom_low_kbar_high = min(start_fractal.left_kbar.high, start_fractal.merged_kbar.high, start_fractal.right_kbar.high)
+            top_high = end_fractal.price
+            
+            if top_high <= bottom_low_kbar_high:
+                self.logger.debug(f"FAILED  - Fractal level relation validation failed (bottom-to-top): top_high={top_high} <= bottom_low_kbar_high={bottom_low_kbar_high}")
+                self.logger.debug(f"Bottom fractal K-line highs: left={start_fractal.left_kbar.high}, middle={start_fractal.merged_kbar.high}, right={start_fractal.right_kbar.high}")
+                self.logger.debug(f"Lowest K-line high in bottom fractal: {bottom_low_kbar_high}")
+                return PenValidationResult.INVALID_FRACTAL_LEVEL_RELATION
+            
+            self.logger.debug(f"PASSED  - Fractal level relation validation passed (bottom-to-top): top_high={top_high} > bottom_low_kbar_high={bottom_low_kbar_high}")
+        
+        elif start_fractal.fractal_type == FractalType.TOP and end_fractal.fractal_type == FractalType.BOTTOM:
+            # Top to bottom pen: bottom fractal low should be lower than top fractal's highest K-line low
+            top_high_kbar_low = max(start_fractal.left_kbar.low, start_fractal.merged_kbar.low, start_fractal.right_kbar.low)
+            bottom_low = end_fractal.price
+            
+            if bottom_low >= top_high_kbar_low:
+                self.logger.debug(f"FAILED  - Fractal level relation validation failed (top-to-bottom): bottom_low={bottom_low} >= top_high_kbar_low={top_high_kbar_low}")
+                self.logger.debug(f"Top fractal K-line lows: left={start_fractal.left_kbar.low}, middle={start_fractal.merged_kbar.low}, right={start_fractal.right_kbar.low}")
+                self.logger.debug(f"Highest K-line low in top fractal: {top_high_kbar_low}")
+                return PenValidationResult.INVALID_FRACTAL_LEVEL_RELATION
+            
+            self.logger.debug(f"PASSED  - Fractal level relation validation passed (top-to-bottom): bottom_low={bottom_low} < top_high_kbar_low={top_high_kbar_low}")
+        
+        return PenValidationResult.VALID
+    
+    def get_rule_name(self) -> str:
+        """
+        Get the name of this validation rule
+        
+        Returns:
+            String identifier for the FractalLevelRelationRule
+        """
+        return "FractalLevelRelationRule"
 
 class PenRuleValidator:
     """
@@ -255,8 +802,13 @@ class PenRuleValidator:
             PenLengthRule(),
             TrendConsistencyRule(),
             MACDValidationRule(),
-            VolumeValidationRule()
+            VolumeValidationRule(),
+            FractalSeparationRule(),
+            FractalLevelRelationRule()
         ]
+        
+        # Note: Standard 3 (pen construction restart logic) is implemented 
+        # in the pen construction algorithm, not in these validation rules
         
         self.logger.info(f"Initialized PenRuleValidator with {len(self.rules)} rules")
     
@@ -504,7 +1056,9 @@ class PenRuleValidator:
             "4. Pen Length Rule: Minimum absolute and relative pen length",
             "5. Trend Consistency Rule: No significant trend violations in pen kbars",
             "6. MACD Validation Rule: MACD should support pen direction (if enabled)",
-            "7. Volume Validation Rule: Volume patterns should support pen (if enabled)"
+            "7. Volume Validation Rule: Volume patterns should support pen (if enabled)",
+            "8. Fractal Separation Rule: Fractals must not share the same K-line",
+            "9. Fractal Level Relation Rule: Top fractal must not be inside bottom fractal"
         ]
     
     def update_config(self, **kwargs):
