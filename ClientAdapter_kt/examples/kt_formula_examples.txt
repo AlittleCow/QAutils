@@ -1,0 +1,235 @@
+# KT公式示例 - QAUtils插件使用
+
+## 基础技术指标示例
+
+### 1. EMA交叉策略
+```pascal
+// 定义变量
+VAR
+    EMA12, EMA26: NUMERIC;
+    Signal: NUMERIC;
+
+// 计算EMA
+EMA12 := EMA(CLOSE, 12);
+EMA26 := EMA(CLOSE, 26);
+
+// 生成交易信号
+IF EMA12 > EMA26 AND EMA12[1] <= EMA26[1] THEN
+    Signal := 1  // 买入信号
+ELSE IF EMA12 < EMA26 AND EMA12[1] >= EMA26[1] THEN
+    Signal := -1 // 卖出信号
+ELSE
+    Signal := 0; // 无信号
+
+// 输出结果
+EMA12;
+EMA26;
+Signal;
+```
+
+### 2. MACD指标策略
+```pascal
+// MACD指标计算
+VAR
+    MACDValue: NUMERIC;
+    RSIValue: NUMERIC;
+    BuySignal, SellSignal: NUMERIC;
+
+// 计算指标
+MACDValue := MACD(CLOSE, 12, 26, 9);
+RSIValue := RSI(CLOSE, 14);
+
+// 组合信号
+BuySignal := 0;
+SellSignal := 0;
+
+IF MACDValue > 0 AND RSIValue < 70 THEN
+    BuySignal := 1;
+
+IF MACDValue < 0 AND RSIValue > 30 THEN
+    SellSignal := 1;
+
+// 输出
+MACDValue;
+RSIValue;
+BuySignal;
+SellSignal;
+```
+
+### 3. RSI超买超卖策略
+```pascal
+// RSI策略
+VAR
+    RSI14: NUMERIC;
+    Overbought, Oversold: NUMERIC;
+    Position: NUMERIC;
+
+RSI14 := RSI(CLOSE, 14);
+
+// 超买超卖判断
+Overbought := IF RSI14 > 70 THEN 1 ELSE 0;
+Oversold := IF RSI14 < 30 THEN 1 ELSE 0;
+
+// 持仓状态
+IF Oversold = 1 THEN
+    Position := 1   // 买入
+ELSE IF Overbought = 1 THEN
+    Position := -1  // 卖出
+ELSE
+    Position := 0;  // 持有
+
+RSI14;
+Position;
+```
+
+## 服务器通信示例
+
+### 4. 服务器状态监控
+```pascal
+// 服务器状态检查
+VAR
+    ServerStatus: NUMERIC;
+    ServerInfo: NUMERIC;
+    ConnectionOK: NUMERIC;
+
+// 检查服务器心跳
+ServerStatus := KTServer_Heartbeat();
+
+// 获取服务器信息
+ServerInfo := KTServer_GetInfo();
+
+// 连接状态判断
+ConnectionOK := IF ServerStatus > 0 THEN 1 ELSE 0;
+
+// 输出状态
+ServerStatus;
+ConnectionOK;
+```
+
+### 5. 服务器SMA计算
+```pascal
+// 使用服务器计算SMA
+VAR
+    LocalEMA: NUMERIC;
+    ServerSMA: NUMERIC;
+    ServerOnline: NUMERIC;
+
+// 检查服务器状态
+ServerOnline := KTServer_Heartbeat();
+
+// 本地计算
+LocalEMA := EMA(CLOSE, 20);
+
+// 服务器计算（如果在线）
+IF ServerOnline > 0 THEN
+    ServerSMA := KTServer_CalculateSMA()
+ELSE
+    ServerSMA := 0;
+
+// 输出对比
+LocalEMA;
+ServerSMA;
+ServerOnline;
+```
+
+## 复合策略示例
+
+### 6. 多指标组合策略
+```pascal
+// 多指标组合
+VAR
+    EMA_Fast, EMA_Slow: NUMERIC;
+    RSI_Value: NUMERIC;
+    MACD_Value: NUMERIC;
+    FinalSignal: NUMERIC;
+    ServerStatus: NUMERIC;
+
+// 计算各项指标
+EMA_Fast := EMA(CLOSE, 12);
+EMA_Slow := EMA(CLOSE, 26);
+RSI_Value := RSI(CLOSE, 14);
+MACD_Value := MACD(CLOSE, 12, 26, 9);
+
+// 检查服务器状态
+ServerStatus := KTServer_Heartbeat();
+
+// 综合信号判断
+FinalSignal := 0;
+
+// 买入条件：EMA金叉 + RSI不超买 + MACD为正
+IF EMA_Fast > EMA_Slow AND 
+   EMA_Fast[1] <= EMA_Slow[1] AND 
+   RSI_Value < 70 AND 
+   MACD_Value > 0 THEN
+    FinalSignal := 1;
+
+// 卖出条件：EMA死叉 + RSI不超卖 + MACD为负
+IF EMA_Fast < EMA_Slow AND 
+   EMA_Fast[1] >= EMA_Slow[1] AND 
+   RSI_Value > 30 AND 
+   MACD_Value < 0 THEN
+    FinalSignal := -1;
+
+// 输出结果
+EMA_Fast;
+EMA_Slow;
+RSI_Value;
+MACD_Value;
+FinalSignal;
+ServerStatus;
+```
+
+### 7. 风险控制策略
+```pascal
+// 带风险控制的策略
+VAR
+    Signal: NUMERIC;
+    RSI14: NUMERIC;
+    EMA20: NUMERIC;
+    StopLoss, TakeProfit: NUMERIC;
+    RiskLevel: NUMERIC;
+
+// 基础信号
+RSI14 := RSI(CLOSE, 14);
+EMA20 := EMA(CLOSE, 20);
+
+// 风险等级评估
+RiskLevel := 0;
+IF RSI14 > 80 OR RSI14 < 20 THEN
+    RiskLevel := 3  // 高风险
+ELSE IF RSI14 > 70 OR RSI14 < 30 THEN
+    RiskLevel := 2  // 中风险
+ELSE
+    RiskLevel := 1; // 低风险
+
+// 根据风险调整信号
+Signal := 0;
+IF CLOSE > EMA20 AND RSI14 < 70 AND RiskLevel <= 2 THEN
+    Signal := 1;
+IF CLOSE < EMA20 AND RSI14 > 30 AND RiskLevel <= 2 THEN
+    Signal := -1;
+
+// 止损止盈
+StopLoss := CLOSE * 0.95;   // 5%止损
+TakeProfit := CLOSE * 1.10; // 10%止盈
+
+Signal;
+RiskLevel;
+StopLoss;
+TakeProfit;
+```
+
+## 使用注意事项
+
+1. **数据长度**: 确保有足够的历史数据进行指标计算
+2. **参数设置**: 根据不同品种调整指标参数
+3. **服务器连接**: 使用服务器功能前先检查连接状态
+4. **错误处理**: 在公式中加入适当的错误处理逻辑
+5. **性能优化**: 避免在每个Bar都进行复杂计算
+
+## 调试技巧
+
+1. 使用简单的输出语句检查中间结果
+2. 查看插件日志文件了解详细信息
+3. 分步骤测试复杂策略
+4. 使用历史数据回测验证策略有效性

@@ -1,0 +1,149 @@
+# 编译输出
+build/
+build32/
+build32_server/
+*.dll
+*.exe
+*.lib
+*.exp
+*.pdb
+*.ilk
+*.obj
+*.o
+*.so
+*.dylib
+*.a
+
+# Visual Studio
+.vs/
+*.vcxproj.user
+*.sln.docstates
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.userprefs
+
+# Visual Studio Code
+.vscode/
+
+# JetBrains IDEs
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# 日志文件
+*.log
+log/
+logs/
+kt_plugin.log
+
+# 临时文件
+*.tmp
+*.temp
+*~
+*.swp
+*.swo
+
+# 系统文件
+Thumbs.db
+.DS_Store
+ehthumbs.db
+Desktop.ini
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+CMakeScripts/
+Testing/
+Makefile
+cmake_install.cmake
+install_manifest.txt
+compile_commands.json
+CTestTestfile.cmake
+_deps
+
+# vcpkg
+vcpkg_installed/
+vcpkg/
+
+# 依赖库（如果不需要版本控制）
+third_party/
+external/
+deps/
+
+# 测试输出
+test_output/
+*.test
+Testing/
+
+# 包管理器
+packages/
+node_modules/
+
+# 备份文件
+*.bak
+*.backup
+*.orig
+
+# 压缩文件
+*.zip
+*.rar
+*.7z
+*.tar.gz
+*.tar.bz2
+
+# 文档生成
+docs/_build/
+docs/html/
+docs/latex/
+
+# Python (如果有Python脚本)
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# 环境变量文件
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# 配置文件（包含敏感信息的）
+config.ini
+secrets.json
+*.key
+*.pem
+*.p12
+*.pfx
+
+# 数据库文件
+*.db
+*.sqlite
+*.sqlite3
+
+# 缓存目录
+cache/
+.cache/
+
+# 特定于项目的忽略
+# 如果有特定的测试数据或配置文件需要忽略，在这里添加
